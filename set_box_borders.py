@@ -7,11 +7,11 @@ import cv2
 from os import listdir
 from os.path import isfile, join, splitext
 from config_file import writeConfigFile
+from image_check import getImageNames
 
 BACKGROUND_DIR = "sources/background"
 FILENAME_CONFIG = "config.ini"
 WINDOW_NAME = "Background"
-IMAGE_EXTENSIONS = [".jpg", ".png"]
 
 MODE_SET_TOP = 0
 MODE_SET_BOTTOM = 1
@@ -26,7 +26,6 @@ TOP = -1
 BOTTOM = -1
 LEFT = -1
 RIGHT = -1
-
 
 def drawBorders():
     global TOP, BOTTOM, LEFT, RIGHT
@@ -60,7 +59,6 @@ def mouseHandler(event, x, y, flags, param):
             TOP = y
         drawBorders()
 
-
 def resetBorders():
     global TOP, BOTTOM, LEFT, RIGHT
     TOP = -1
@@ -86,21 +84,6 @@ def changeProgramMode(keyCode):
         ProgramMode = MODE_SET_TOP
     return (doChangeImage, doExit)
 
-def isImageExtension(checkedExtension):
-    for extension in IMAGE_EXTENSIONS:
-        if extension == checkedExtension:
-            return True
-    return False
-
-def getImageNames():
-    filenames = [f for f in listdir(BACKGROUND_DIR) if isfile(join(BACKGROUND_DIR, f))]
-    image_names = []
-    for full_name in filenames:
-        filename, file_extension = splitext(full_name)
-        if isImageExtension(file_extension):
-            image_names.append(full_name)
-    return image_names
-
 def addImageData(imageData, imageName):
     if TOP != -1 and BOTTOM != -1 and LEFT != -1 and RIGHT != -1:
         imageData[imageName] = {}
@@ -110,7 +93,7 @@ def addImageData(imageData, imageName):
         imageData[imageName]["right"] = RIGHT
 
 imageData = {}
-imageNames = getImageNames()
+imageNames = getImageNames(BACKGROUND_DIR)
 cv2.namedWindow(WINDOW_NAME)
 cv2.setMouseCallback(WINDOW_NAME, mouseHandler)
 for imageName in imageNames:
