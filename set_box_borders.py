@@ -6,6 +6,7 @@ import cv2
 
 from os import listdir
 from os.path import isfile, join, splitext
+from config_file import writeConfigFile
 
 BACKGROUND_DIR = "sources/background"
 FILENAME_CONFIG = "config.ini"
@@ -99,16 +100,6 @@ def getImageNames():
         if isImageExtension(file_extension):
             image_names.append(full_name)
     return image_names
-
-def writeConfigFile(fileName, dictionary):
-    configFile = open(fileName, 'w')
-    config = ConfigParser.ConfigParser()
-    for key in dictionary:
-        config.add_section(key)
-        for subKey in dictionary[key]:
-            config.set(key, subKey, dictionary[key][subKey])
-    config.write(configFile)
-    configFile.close()
 
 def addImageData(imageData, imageName):
     if TOP != -1 and BOTTOM != -1 and LEFT != -1 and RIGHT != -1:
