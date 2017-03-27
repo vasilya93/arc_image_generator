@@ -10,7 +10,6 @@ from config_file import writeConfigFile
 from image_check import getImageNames
 
 BACKGROUND_DIR = "sources/background"
-FILENAME_CONFIG = "config.ini"
 WINDOW_NAME = "Background"
 
 MODE_SET_TOP = 0
@@ -98,8 +97,8 @@ cv2.namedWindow(WINDOW_NAME)
 cv2.setMouseCallback(WINDOW_NAME, mouseHandler)
 for imageName in imageNames:
     resetBorders()
-    image_path = BACKGROUND_DIR + "/" + imageName
-    ImageOriginal = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    imagePath = BACKGROUND_DIR + "/" + imageName
+    ImageOriginal = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
     ImageShown = ImageOriginal.copy()
     doChangeImage = False; doExit = False
     while not (doChangeImage or doExit):
@@ -110,5 +109,4 @@ for imageName in imageNames:
     if doExit:
         break
 if len(imageData) != 0:
-    pathConfig = BACKGROUND_DIR + "/" + FILENAME_CONFIG
-    writeConfigFile(pathConfig, imageData)
+    writeConfigFile(BACKGROUND_DIR, imageData)
