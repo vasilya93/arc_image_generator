@@ -10,6 +10,7 @@ from os.path import isfile
 from rotate_image import rotateImage
 from image_check import getImageNames
 from config_file import readConfigSection, writeConfigFile
+from rectangle import Rectangle
 
 # Constants
 WINDOW_NAME = "Box"
@@ -19,8 +20,8 @@ OBJECTS_DIR = "./sources/objects"
 
 # Paramerters which can be set to default values
 doCropBox = True
-rescaleCoef = .1
-sampleSetSize = 20
+rescaleCoef = 1.0
+sampleSetSize = 100
 backgroundFilename = "box_white_back.jpg"
 
 def getObjectImages(parentDirectory):
@@ -92,6 +93,7 @@ def addSquareToList(top, bottom, left, right, listSquares):
 def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
     height, width, numChannels = imageBoxCurrent.shape
     dictObjects = {}
+    listRectangles = []
     for i in range(len(objectImages)):
         objectImage = objectImages[i]
         heightOrig, widthOrig, channelsOrig = objectImage.shape
@@ -103,10 +105,16 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
             print "Warning: object does not fit into the box"
             continue
 
-        xBeg = randint(0, width - objWidth)
-        yBeg = randint(0, height - objHeight)
-        xEnd = xBeg + objWidth
-        yEnd = yBeg + objHeight
+        while True:
+            xBeg = randint(0, width - objWidth)
+            yBeg = randint(0, height - objHeight)
+            xEnd = xBeg + objWidth
+            yEnd = yBeg + objHeight
+            rectCurrent = Rectangle(yBeg, yEnd, xBeg, xEnd)
+            doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles)
+            if not doesIntersect:
+                listRectangles.append(rectCurrent)
+                break
  
         xCenter = (xBeg + xEnd) / 2.0
         yCenter = (yBeg + yEnd) / 2.0
