@@ -20,9 +20,15 @@ OBJECTS_DIR = "./sources/objects"
 
 # Paramerters which can be set to default values
 doCropBox = True
-rescaleCoef = 1.0
-sampleSetSize = 100
+rescaleCoef = 0.1
+sampleSetSize = 30000
 backgroundFilename = "box_white_back.jpg"
+
+def heightAbsToRel(height, value):
+	return (value / height) * 2 - 1
+
+def widthAbsToRel(width, value):
+        return (value / width) * 2 - 1
 
 def getObjectImages(parentDirectory):
     imageNames = getImageNames(parentDirectory)
@@ -99,7 +105,7 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
         heightOrig, widthOrig, channelsOrig = objectImage.shape
         objectName = imageNames[i]
         angle = randint(0, 359)
-        imageRotated = rotateImage(objectImage, angle / 180.0 * math.pi)
+        (imageRotated, cornersRot) = rotateImage(objectImage, angle / 180.0 * math.pi)
         objHeight, objWidth, objChannels = imageRotated.shape
         if objHeight > height or objWidth > width:
             print "Warning: object does not fit into the box"
@@ -126,9 +132,22 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
         dictObjects[objectName]["height"] = heightOrig
         dictObjects[objectName]["width"] = widthOrig
 
+        dictObjects[objectName]["x_left_top"] = widthAbsToRel(width, xCenter + cornersRot[0][0])
+        dictObjects[objectName]["y_left_top"] = heightAbsToRel(height, yCenter + cornersRot[0][1])
+
+        dictObjects[objectName]["x_right_top"] = widthAbsToRel(width, xCenter + cornersRot[1][0])
+        dictObjects[objectName]["y_right_top"] = heightAbsToRel(height, yCenter + cornersRot[1][1])
+
+        dictObjects[objectName]["x_left_bottom"] = widthAbsToRel(width, xCenter + cornersRot[2][0])
+        dictObjects[objectName]["y_left_bottom"] = heightAbsToRel(height, yCenter + cornersRot[2][1])
+
+        dictObjects[objectName]["x_right_bottom"] = widthAbsToRel(width, xCenter + cornersRot[3][0])
+        dictObjects[objectName]["y_right_bottom"] = heightAbsToRel(height, yCenter + cornersRot[3][1])
+
         putObjectOnBackground(imageBoxCurrent, imageRotated, \
                 [xBeg, yBeg, xEnd, yEnd])
     return dictObjects
+
 
 def scaleCoordinates(dictObjects, factor):
     for key in dictObjects:

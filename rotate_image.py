@@ -14,6 +14,7 @@ def rotateImage(image, angle):
     corners.append(np.array([-width / 2.0, height / 2.0]))
     corners.append(np.array([width / 2.0, height / 2.0]))
 
+
     cornersRot = []
     for corner in corners:
         cornersRot.append(rotMat.dot(corner))
@@ -50,4 +51,4 @@ def rotateImage(image, angle):
     offsetY = (heightNew - yRange) / 2
     imageRotated = imageRotated[offsetY:offsetY + yRange, offsetX:offsetX + xRange, :]
 
-    return imageRotated
+    return (imageRotated, cornersRot)
