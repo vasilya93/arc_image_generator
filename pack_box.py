@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import math
 import subprocess
+import random
 from random import randint
 from time import gmtime, strftime
 from os.path import isfile
@@ -17,10 +18,13 @@ WINDOW_NAME = "Box"
 DIRNAME_OUTPUT = "output"
 BACKGROUND_DIR = "./sources/background"
 OBJECTS_DIR = "./sources/objects"
+DO_DROP_OBJECTS = True
+MAX_OBJECTS_COUNT = 3
+INTERSECT_COUNTER_LIMIT = 100
 
 # Paramerters which can be set to default values
 doCropBox = True
-rescaleCoef = 0.1
+rescaleCoef = 0.15
 sampleSetSize = 30000
 backgroundFilename = "box_white_back.jpg"
 
@@ -96,56 +100,89 @@ def addSquareToList(top, bottom, left, right, listSquares):
         "left" : left,
         "right" : right })
 
+def decideTakenImages(numImages):
+    isImageTaken = [False] * numImages
+    for i in range(MAX_OBJECTS_COUNT):
+        indexTrue = random.randint(0, numImages - 1)
+        isImageTaken[indexTrue] = True
+    return isImageTaken
+
 def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
     height, width, numChannels = imageBoxCurrent.shape
     dictObjects = {}
     listRectangles = []
+    isImageTaken = decideTakenImages(len(objectImages))
     for i in range(len(objectImages)):
+        if not DO_DROP_OBJECTS:
+            doSkipObject = False
+        else:
+            doSkipObject = not isImageTaken[i]
+
         objectImage = objectImages[i]
-        heightOrig, widthOrig, channelsOrig = objectImage.shape
         objectName = imageNames[i]
-        angle = randint(0, 359)
-        (imageRotated, cornersRot) = rotateImage(objectImage, angle / 180.0 * math.pi)
-        objHeight, objWidth, objChannels = imageRotated.shape
-        if objHeight > height or objWidth > width:
-            print "Warning: object does not fit into the box"
-            continue
+        if not doSkipObject:
+            heightOrig, widthOrig, channelsOrig = objectImage.shape
+            angle = randint(0, 359)
+            (imageRotated, cornersRot) = rotateImage(objectImage, angle / 180.0 * math.pi)
+            objHeight, objWidth, objChannels = imageRotated.shape
+            if objHeight > height or objWidth > width:
+                print "Warning: object does not fit into the box"
+                continue
 
-        while True:
-            xBeg = randint(0, width - objWidth)
-            yBeg = randint(0, height - objHeight)
-            xEnd = xBeg + objWidth
-            yEnd = yBeg + objHeight
-            rectCurrent = Rectangle(yBeg, yEnd, xBeg, xEnd)
-            doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles)
-            if not doesIntersect:
-                listRectangles.append(rectCurrent)
-                break
+            intersectCounter = 0
+            while True:
+                xBeg = randint(0, width - objWidth)
+                yBeg = randint(0, height - objHeight)
+                xEnd = xBeg + objWidth
+                yEnd = yBeg + objHeight
+                rectCurrent = Rectangle(yBeg, yEnd, xBeg, xEnd)
+                doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles)
+                if not doesIntersect:
+                    listRectangles.append(rectCurrent)
+                    break
+                else:
+                    intersectCounter += 1
+                    if intersectCounter >= INTERSECT_COUNTER_LIMIT:
+                        doSkipObject = True
+                        break
  
-        xCenter = (xBeg + xEnd) / 2.0
-        yCenter = (yBeg + yEnd) / 2.0
+            if not doSkipObject:
+                xCenter = (xBeg + xEnd) / 2.0
+                yCenter = (yBeg + yEnd) / 2.0
+
+                putObjectOnBackground(imageBoxCurrent, imageRotated, \
+                    [xBeg, yBeg, xEnd, yEnd])
+
         dictObjects[objectName] = {}
-        dictObjects[objectName]["angle"] = (angle / 180.0) if angle <= 180 else ((angle - 360.0) / 180.0)
-        dictObjects[objectName]["x"] = xCenter; dictObjects[objectName]["y"] = yCenter
-        dictObjects[objectName]["x_rel"] = (xCenter / width) * 2 - 1
-	dictObjects[objectName]["y_rel"] = (yCenter / height) * 2 - 1
-        dictObjects[objectName]["height"] = heightOrig
-        dictObjects[objectName]["width"] = widthOrig
+        dictObjects[objectName]["is_present"] = 0.0 if doSkipObject else 1.0
+        dictObjects[objectName]["angle"] = (angle / 180.0) if not doSkipObject else 0.0
+        dictObjects[objectName]["x"] = xCenter if not doSkipObject else 0.0
+        dictObjects[objectName]["y"] = yCenter if not doSkipObject else 0.0
+        dictObjects[objectName]["x_rel"] = (xCenter / width) * 2 - 1 if not doSkipObject else 0.0
+	dictObjects[objectName]["y_rel"] = (yCenter / height) * 2 - 1 if not doSkipObject else 0.0
+        dictObjects[objectName]["height"] = heightOrig if not doSkipObject else 0
+        dictObjects[objectName]["width"] = widthOrig if not doSkipObject else 0
 
-        dictObjects[objectName]["x_left_top"] = widthAbsToRel(width, xCenter + cornersRot[0][0])
-        dictObjects[objectName]["y_left_top"] = heightAbsToRel(height, yCenter + cornersRot[0][1])
+        dictObjects[objectName]["x_left_top"] = widthAbsToRel(width, xCenter + cornersRot[0][0]) \
+                if not doSkipObject else 0.0
+        dictObjects[objectName]["y_left_top"] = heightAbsToRel(height, yCenter + cornersRot[0][1]) \
+                if not doSkipObject else 0.0
 
-        dictObjects[objectName]["x_right_top"] = widthAbsToRel(width, xCenter + cornersRot[1][0])
-        dictObjects[objectName]["y_right_top"] = heightAbsToRel(height, yCenter + cornersRot[1][1])
+        dictObjects[objectName]["x_right_top"] = widthAbsToRel(width, xCenter + cornersRot[1][0]) \
+                if not doSkipObject else 0.0
+        dictObjects[objectName]["y_right_top"] = heightAbsToRel(height, yCenter + cornersRot[1][1]) \
+                if not doSkipObject else 0.0
 
-        dictObjects[objectName]["x_left_bottom"] = widthAbsToRel(width, xCenter + cornersRot[2][0])
-        dictObjects[objectName]["y_left_bottom"] = heightAbsToRel(height, yCenter + cornersRot[2][1])
+        dictObjects[objectName]["x_left_bottom"] = widthAbsToRel(width, xCenter + cornersRot[2][0]) \
+                if not doSkipObject else 0.0
+        dictObjects[objectName]["y_left_bottom"] = heightAbsToRel(height, yCenter + cornersRot[2][1]) \
+                if not doSkipObject else 0.0
 
-        dictObjects[objectName]["x_right_bottom"] = widthAbsToRel(width, xCenter + cornersRot[3][0])
-        dictObjects[objectName]["y_right_bottom"] = heightAbsToRel(height, yCenter + cornersRot[3][1])
-
-        putObjectOnBackground(imageBoxCurrent, imageRotated, \
-                [xBeg, yBeg, xEnd, yEnd])
+        dictObjects[objectName]["x_right_bottom"] = widthAbsToRel(width, xCenter + cornersRot[3][0]) \
+                if not doSkipObject else 0.0
+        dictObjects[objectName]["y_right_bottom"] = heightAbsToRel(height, yCenter + cornersRot[3][1]) \
+                if not doSkipObject else 0.0
+ 
     return dictObjects
 
 
