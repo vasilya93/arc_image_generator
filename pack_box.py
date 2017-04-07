@@ -21,11 +21,12 @@ OBJECTS_DIR = "./sources/objects"
 DO_DROP_OBJECTS = True
 MAX_OBJECTS_COUNT = 3
 INTERSECT_COUNTER_LIMIT = 100
+DO_VARIATE_BRIGHTNESS = True
 
 # Paramerters which can be set to default values
 doCropBox = True
-rescaleCoef = 0.15
-sampleSetSize = 30000
+rescaleCoef = 1
+sampleSetSize = 30
 backgroundFilename = "box_white_back.jpg"
 
 def heightAbsToRel(height, value):
@@ -193,6 +194,21 @@ def scaleCoordinates(dictObjects, factor):
         dictObjects[key]["height"] = round(dictObjects[key]["height"] * factor)
         dictObjects[key]["width"] = round(dictObjects[key]["width"] * factor)
 
+def variateBrightness(img):
+    incr = random.randint(-60, 60)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    value = hsv[:,:,2]
+    if incr >= 0:
+        incr_border = 255 - incr
+        value[value >= incr_border] = 255
+        value[value < incr_border] += incr
+    else:
+        incr_border = -incr
+        value[value > incr_border] -= incr_border
+        value[value <= incr_border] = 0
+    img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    return img
+
 imageBox = getImageBackground(BACKGROUND_DIR, backgroundFilename, doCropBox)
 objectImages, imageNames = getObjectImages(OBJECTS_DIR)
 stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
@@ -206,6 +222,9 @@ for i in range(sampleSetSize):
     if rescaleCoef != 1.0:
         imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = rescaleCoef, fy = rescaleCoef)
         scaleCoordinates(dictObjects, rescaleCoef)
+    if DO_VARIATE_BRIGHTNESS:
+        imageBoxCurrent = variateBrightness(imageBoxCurrent)
+    imageBoxCurrent = cv2.GaussianBlur(imageBoxCurrent, (5, 5), 0)
 
     outImageName = str(i) + ".png"
     outImagePath = dirnameOutputFull + "/" + outImageName
