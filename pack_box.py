@@ -4,13 +4,16 @@ import cv2
 import math
 import subprocess
 import random
+import os
 from random import randint
+from random import shuffle
 from time import gmtime, strftime
 from os.path import isfile
 
 from rotate_image import rotateImage
 from image_check import getImageNames
 from config_file import readConfigSection, writeConfigFile
+from put_object_on_background import putObjectOnBackground
 from rectangle import Rectangle
 
 # Constants
@@ -21,19 +24,20 @@ OBJECTS_DIR = "./sources/objects"
 DO_DROP_OBJECTS = True
 MAX_OBJECTS_COUNT = 3
 INTERSECT_COUNTER_LIMIT = 100
-DO_VARIATE_BRIGHTNESS = True
+OVERSIZE_COUNTER_LIMIT = 100
+DO_VARIATE_BRIGHTNESS = False
 
 # Paramerters which can be set to default values
 doCropBox = True
-rescaleCoef = 1
-sampleSetSize = 30
-backgroundFilename = "box_white_back.jpg"
+rescaleCoef = .3
+sampleSetSize = 30000
+backgroundFilename = "box_white.jpg"
 
 def heightAbsToRel(height, value):
-	return (value / height) * 2 - 1
+    return (value / height) * 2 - 1
 
 def widthAbsToRel(width, value):
-        return (value / width) * 2 - 1
+    return (value / width) * 2 - 1
 
 def getObjectImages(parentDirectory):
     imageNames = getImageNames(parentDirectory)
@@ -41,22 +45,7 @@ def getObjectImages(parentDirectory):
     for filename in imageNames:
         imagePath = parentDirectory + "/" + filename
         imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
-        height, width, numChannels = imageFull.shape
-        if numChannels > 3:
-            imageMask = imageFull[:, :, 3]
-            imageRed = imageFull[:,:,0]
-            imageGreen = imageFull[:,:,1]
-            imageBlue = imageFull[:,:,2]
-            imageRed[imageMask != 255] = 0
-            imageGreen[imageMask != 255] = 0
-            imageBlue[imageMask != 255] = 0
-            imageRgb = np.zeros((height, width, 3), dtype = np.uint8)
-            imageRgb[:,:,0] = imageRed
-            imageRgb[:,:,1] = imageGreen
-            imageRgb[:,:,2] = imageBlue
-        else:
-            imageRgb = imageFull
-        objectImages.append(imageRgb)
+        objectImages.append(imageFull)
     return (objectImages, imageNames)
 
 def getImageBackground(backgroundDir, backgroundFilename, doCropBox):
@@ -75,26 +64,6 @@ def getImageBackground(backgroundDir, backgroundFilename, doCropBox):
     imageBox = imageBackground[boxTop:boxBottom, boxLeft:boxRight, :]
     return imageBox
 
-def putObjectOnBackground(imageBoxCurret, objImage, borders):
-    xBeg = borders[0]
-    yBeg = borders[1]
-    xEnd = borders[2]
-    yEnd = borders[3]
-
-    imageGrey = cv2.cvtColor(objImage, cv2.COLOR_BGR2GRAY)
-    imageRed = objImage[:,:,0]
-    imageGreen = objImage[:,:,1]
-    imageBlue = objImage[:,:,2]
-
-    imageArea = imageBoxCurrent[yBeg:yEnd, xBeg:xEnd, :]
-    imageAreaRed = imageArea[:,:,0]
-    imageAreaGreen = imageArea[:,:,1]
-    imageAreaBlue = imageArea[:,:,2]
-
-    imageAreaRed[imageGrey != 0] = imageRed[imageGrey != 0]
-    imageAreaGreen[imageGrey != 0] = imageGreen[imageGrey != 0]
-    imageAreaBlue[imageGrey != 0] = imageBlue[imageGrey != 0]
-
 def addSquareToList(top, bottom, left, right, listSquares):
     listSquares.append({"top" : top, 
         "bottom" : bottom,
@@ -108,12 +77,19 @@ def decideTakenImages(numImages):
         isImageTaken[indexTrue] = True
     return isImageTaken
 
+# TODO: make the function shorter
 def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
     height, width, numChannels = imageBoxCurrent.shape
     dictObjects = {}
     listRectangles = []
     isImageTaken = decideTakenImages(len(objectImages))
-    for i in range(len(objectImages)):
+
+    # shuffling images of the objects, so that we do not take them
+    # in the same order every time
+    imageIndeces = range(len(objectImages))
+    shuffle(imageIndeces)
+
+    for i in imageIndeces:
         if not DO_DROP_OBJECTS:
             doSkipObject = False
         else:
@@ -123,30 +99,44 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
         objectName = imageNames[i]
         if not doSkipObject:
             heightOrig, widthOrig, channelsOrig = objectImage.shape
-            angle = randint(0, 359)
-            (imageRotated, cornersRot) = rotateImage(objectImage, angle / 180.0 * math.pi)
-            objHeight, objWidth, objChannels = imageRotated.shape
-            if objHeight > height or objWidth > width:
-                print "Warning: object does not fit into the box"
-                continue
 
-            intersectCounter = 0
+            # Rotating image of the object and checking whether the size is good
+            oversizeCounter = 0
             while True:
-                xBeg = randint(0, width - objWidth)
-                yBeg = randint(0, height - objHeight)
-                xEnd = xBeg + objWidth
-                yEnd = yBeg + objHeight
-                rectCurrent = Rectangle(yBeg, yEnd, xBeg, xEnd)
-                doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles)
-                if not doesIntersect:
-                    listRectangles.append(rectCurrent)
-                    break
-                else:
-                    intersectCounter += 1
-                    if intersectCounter >= INTERSECT_COUNTER_LIMIT:
+                angle = randint(0, 359)
+                (imageRotated, cornersRot) = rotateImage(objectImage, angle / 180.0 * math.pi)
+                objHeight, objWidth, objChannels = imageRotated.shape
+                if objHeight > height or objWidth > width:
+                    oversizeCounter += 1
+                    if oversizeCounter >= OVERSIZE_COUNTER_LIMIT:
+                        print "Warning: object does not fit into the box"
                         doSkipObject = True
                         break
+                else:
+                    break
+
+            # Selecting position for rotated object, and checking that there is not intersection
+            # with the other objects
+            if not doSkipObject:
+                intersectCounter = 0
+                while True:
+                    xBeg = randint(0, width - objWidth)
+                    yBeg = randint(0, height - objHeight)
+                    xEnd = xBeg + objWidth
+                    yEnd = yBeg + objHeight
+                    rectCurrent = Rectangle(yBeg, yEnd, xBeg, xEnd)
+                    doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles)
+                    if not doesIntersect:
+                        listRectangles.append(rectCurrent)
+                        break
+                    else:
+                        intersectCounter += 1
+                        if intersectCounter >= INTERSECT_COUNTER_LIMIT:
+                            print "Warning: object intersects the other objects"
+                            doSkipObject = True
+                            break
  
+            # Once the object is rotated and its position is selected, we put it onto the image
             if not doSkipObject:
                 xCenter = (xBeg + xEnd) / 2.0
                 yCenter = (yBeg + yEnd) / 2.0
@@ -154,9 +144,15 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
                 putObjectOnBackground(imageBoxCurrent, imageRotated, \
                     [xBeg, yBeg, xEnd, yEnd])
 
+        # Writing information about object placement to the dictionary
+        if doSkipObject:
+            angle = 0.0
+        else:
+            angle = (angle if angle <= 180.0 else angle - 360.0) / 180.0
+
         dictObjects[objectName] = {}
         dictObjects[objectName]["is_present"] = 0.0 if doSkipObject else 1.0
-        dictObjects[objectName]["angle"] = (angle / 180.0) if not doSkipObject else 0.0
+        dictObjects[objectName]["angle"] = angle
         dictObjects[objectName]["x"] = xCenter if not doSkipObject else 0.0
         dictObjects[objectName]["y"] = yCenter if not doSkipObject else 0.0
         dictObjects[objectName]["x_rel"] = (xCenter / width) * 2 - 1 if not doSkipObject else 0.0
@@ -185,7 +181,6 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
                 if not doSkipObject else 0.0
  
     return dictObjects
-
 
 def scaleCoordinates(dictObjects, factor):
     for key in dictObjects:
