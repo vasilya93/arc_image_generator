@@ -5,7 +5,7 @@ import math
 
 # angle is given in the radians
 def rotateImage(image, angle):
-    rotMat = np.array([[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]])
+    rotMat = np.array([[math.cos(-angle), -math.sin(-angle)], [math.sin(-angle), math.cos(-angle)]])
     height, width, num_channels = image.shape
 
     corners = []
@@ -41,7 +41,7 @@ def rotateImage(image, angle):
     center_new = (widthNew / 2, heightNew / 2)
     offsetX = (widthNew - width) / 2
     offsetY = (heightNew - height) / 2
-    imageRotated = np.zeros((heightNew, widthNew, 3), dtype = np.uint8)
+    imageRotated = np.zeros((heightNew, widthNew, num_channels), dtype = np.uint8)
     imageRotated[offsetY:offsetY + height, offsetX:offsetX + width, :] = image[:, :, :]
 
     rotMat = cv2.getRotationMatrix2D(center_new, angle / math.pi * 180, 1.0)
