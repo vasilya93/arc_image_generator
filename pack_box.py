@@ -15,6 +15,7 @@ from image_check import getImageNames
 from config_file import readConfigSection, writeConfigFile
 from put_object_on_background import putObjectOnBackground
 from rectangle import Rectangle
+from object_image_description import ObjectImageDescription
 
 # Constants
 WINDOW_NAME = "Box"
@@ -29,15 +30,9 @@ DO_VARIATE_BRIGHTNESS = False
 
 # Paramerters which can be set to default values
 doCropBox = True
-rescaleCoef = .3
-sampleSetSize = 30000
+rescaleCoef = .6
+sampleSetSize = 30
 backgroundFilename = "box_white.jpg"
-
-def heightAbsToRel(height, value):
-    return (value / height) * 2 - 1
-
-def widthAbsToRel(width, value):
-    return (value / width) * 2 - 1
 
 def getObjectImages(parentDirectory):
     imageNames = getImageNames(parentDirectory)
@@ -90,34 +85,39 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
     shuffle(imageIndeces)
 
     for i in imageIndeces:
+        objDesc = ObjectImageDescription()
+        objDesc.imageWidth = width
+        objDesc.imageHeight = height
         if not DO_DROP_OBJECTS:
-            doSkipObject = False
+            objDesc.isPresent = True
         else:
-            doSkipObject = not isImageTaken[i]
+            objDesc.isPresent = isImageTaken[i]
 
         objectImage = objectImages[i]
         objectName = imageNames[i]
-        if not doSkipObject:
-            heightOrig, widthOrig, channelsOrig = objectImage.shape
+        cornersRot = []
+        if objDesc.isPresent:
+            objDesc.height, objDesc.width, channelsOrig = objectImage.shape
 
             # Rotating image of the object and checking whether the size is good
             oversizeCounter = 0
             while True:
-                angle = randint(0, 359)
-                (imageRotated, cornersRot) = rotateImage(objectImage, angle / 180.0 * math.pi)
+                objDesc.angle = randint(0, 359)
+                (imageRotated, cornersRot) = rotateImage(objectImage, \
+                        objDesc.angle / 180.0 * math.pi)
                 objHeight, objWidth, objChannels = imageRotated.shape
                 if objHeight > height or objWidth > width:
                     oversizeCounter += 1
                     if oversizeCounter >= OVERSIZE_COUNTER_LIMIT:
                         print "Warning: object does not fit into the box"
-                        doSkipObject = True
+                        objDesc.isPresent = False
                         break
                 else:
                     break
 
-            # Selecting position for rotated object, and checking that there is not intersection
-            # with the other objects
-            if not doSkipObject:
+            # Selecting position for rotated object, and checking that there is
+            # no intersection with the other objects
+            if objDesc.isPresent:
                 intersectCounter = 0
                 while True:
                     xBeg = randint(0, width - objWidth)
@@ -133,52 +133,19 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
                         intersectCounter += 1
                         if intersectCounter >= INTERSECT_COUNTER_LIMIT:
                             print "Warning: object intersects the other objects"
-                            doSkipObject = True
+                            objDesc.isPresent = False
                             break
  
-            # Once the object is rotated and its position is selected, we put it onto the image
-            if not doSkipObject:
-                xCenter = (xBeg + xEnd) / 2.0
-                yCenter = (yBeg + yEnd) / 2.0
+            # Once the object is rotated and its position is selected, we put it
+            # onto the image
+            if objDesc.isPresent:
+                objDesc.x = (xBeg + xEnd) / 2.0
+                objDesc.x = (yBeg + yEnd) / 2.0
 
                 putObjectOnBackground(imageBoxCurrent, imageRotated, \
                     [xBeg, yBeg, xEnd, yEnd])
 
-        # Writing information about object placement to the dictionary
-        if doSkipObject:
-            angle = 0.0
-        else:
-            angle = (angle if angle <= 180.0 else angle - 360.0) / 180.0
-
-        dictObjects[objectName] = {}
-        dictObjects[objectName]["is_present"] = 0.0 if doSkipObject else 1.0
-        dictObjects[objectName]["angle"] = angle
-        dictObjects[objectName]["x"] = xCenter if not doSkipObject else 0.0
-        dictObjects[objectName]["y"] = yCenter if not doSkipObject else 0.0
-        dictObjects[objectName]["x_rel"] = (xCenter / width) * 2 - 1 if not doSkipObject else 0.0
-	dictObjects[objectName]["y_rel"] = (yCenter / height) * 2 - 1 if not doSkipObject else 0.0
-        dictObjects[objectName]["height"] = heightOrig if not doSkipObject else 0
-        dictObjects[objectName]["width"] = widthOrig if not doSkipObject else 0
-
-        dictObjects[objectName]["x_left_top"] = widthAbsToRel(width, xCenter + cornersRot[0][0]) \
-                if not doSkipObject else 0.0
-        dictObjects[objectName]["y_left_top"] = heightAbsToRel(height, yCenter + cornersRot[0][1]) \
-                if not doSkipObject else 0.0
-
-        dictObjects[objectName]["x_right_top"] = widthAbsToRel(width, xCenter + cornersRot[1][0]) \
-                if not doSkipObject else 0.0
-        dictObjects[objectName]["y_right_top"] = heightAbsToRel(height, yCenter + cornersRot[1][1]) \
-                if not doSkipObject else 0.0
-
-        dictObjects[objectName]["x_left_bottom"] = widthAbsToRel(width, xCenter + cornersRot[2][0]) \
-                if not doSkipObject else 0.0
-        dictObjects[objectName]["y_left_bottom"] = heightAbsToRel(height, yCenter + cornersRot[2][1]) \
-                if not doSkipObject else 0.0
-
-        dictObjects[objectName]["x_right_bottom"] = widthAbsToRel(width, xCenter + cornersRot[3][0]) \
-                if not doSkipObject else 0.0
-        dictObjects[objectName]["y_right_bottom"] = heightAbsToRel(height, yCenter + cornersRot[3][1]) \
-                if not doSkipObject else 0.0
+        dictObjects[objectName] = objDesc.getDictionary(cornersRot)
  
     return dictObjects
 
