@@ -3,7 +3,9 @@ import numpy as np
 import cv2
 import math
 
-# angle is given in the radians
+# The function returns image rotated for the specified angle (in radians).
+# It also returns coordinates of the pixels representing coordinates of the
+# corners of the initial image with respect to the center of the image.
 def rotateImage(image, angle):
     rotMat = np.array([[math.cos(-angle), -math.sin(-angle)], [math.sin(-angle), math.cos(-angle)]])
     height, width, num_channels = image.shape
@@ -13,7 +15,6 @@ def rotateImage(image, angle):
     corners.append(np.array([width / 2.0, -height / 2.0]))
     corners.append(np.array([-width / 2.0, height / 2.0]))
     corners.append(np.array([width / 2.0, height / 2.0]))
-
 
     cornersRot = []
     for corner in corners:

@@ -1,6 +1,5 @@
 #!/usr/bin/python
 
-
 def absToRel(total, value):
     return (value / total) * 2 - 1
 

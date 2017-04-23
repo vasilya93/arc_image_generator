@@ -7,6 +7,8 @@ class Rectangle:
         self.left = left
         self.right = right
 
+    # Checks every rectangle in the list 'rectangles' to understand whether it overlaps
+    # with the current 'self' rectangle.
     def doesOverlapRectangles(self, rectangles):
         doesOverlap = False
         for rect in rectangles:
@@ -37,6 +39,8 @@ class Rectangle:
 
         return doesOverlap
 
+    # Checks every rectangle in the list 'rectangles' to understand whether it intersects
+    # with the current 'self' rectangle.
     def doesIntersectRectangles(self, rectangles):
         doesIntersect = False
         for rect in rectangles:

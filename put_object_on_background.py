@@ -3,6 +3,9 @@
 import cv2
 import numpy as np
 
+# Puts specified image of object onto specified image of background
+# in indicated position considering transparancy of the image of the
+# object.
 def putObjectOnBackground(imageBoxCurrent, objImage, borders):
     xBeg = borders[0]
     yBeg = borders[1]

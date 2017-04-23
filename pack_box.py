@@ -22,18 +22,21 @@ WINDOW_NAME = "Box"
 DIRNAME_OUTPUT = "output"
 BACKGROUND_DIR = "./sources/background"
 OBJECTS_DIR = "./sources/objects"
-DO_DROP_OBJECTS = True
-MAX_OBJECTS_COUNT = 3
 INTERSECT_COUNTER_LIMIT = 100
 OVERSIZE_COUNTER_LIMIT = 100
+
+DO_DROP_OBJECTS = True
+MAX_OBJECTS_COUNT = 3
 DO_VARIATE_BRIGHTNESS = False
 
 # Paramerters which can be set to default values
 doCropBox = True
-rescaleCoef = .6
+rescaleCoef = 1.0
 sampleSetSize = 30
 backgroundFilename = "box_white.jpg"
 
+# Returns list of images (of objects) and names of the images from
+# the directory which is given as parameter to the function.
 def getObjectImages(parentDirectory):
     imageNames = getImageNames(parentDirectory)
     objectImages = []
@@ -43,6 +46,9 @@ def getObjectImages(parentDirectory):
         objectImages.append(imageFull)
     return (objectImages, imageNames)
 
+# Returns specified image from the specified directory, which is supposed to be
+# used as background to put objects on. If needed, the background is cropped
+# to indicated region (containing only the box with the objects).
 def getImageBackground(backgroundDir, backgroundFilename, doCropBox):
     backgroundPath = backgroundDir + "/" + backgroundFilename
     if not isfile(backgroundPath):
@@ -59,12 +65,18 @@ def getImageBackground(backgroundDir, backgroundFilename, doCropBox):
     imageBox = imageBackground[boxTop:boxBottom, boxLeft:boxRight, :]
     return imageBox
 
+# Adds new dictionary to the list of dictioanries. Each of the dictionaries in
+# the list contains information about borders of a square.
 def addSquareToList(top, bottom, left, right, listSquares):
     listSquares.append({"top" : top, 
         "bottom" : bottom,
         "left" : left,
         "right" : right })
 
+# Returns array of boolean values of indicated size, where some random of the
+# elements are set to true, and the rest are false. Maximal number of true
+# values is equal to MAX_OBJECTS_COUNT. The function is supposed to be used for
+# random selection of object which will be put into an image.
 def decideTakenImages(numImages):
     isImageTaken = [False] * numImages
     for i in range(MAX_OBJECTS_COUNT):
@@ -72,7 +84,9 @@ def decideTakenImages(numImages):
         isImageTaken[indexTrue] = True
     return isImageTaken
 
-# TODO: make the function shorter
+# The function randomly selects images from the list 'objectImages' and places
+# them on the background of 'imageBoxCurrent' with random position and
+# orientation trying to avoid intersections.
 def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
     height, width, numChannels = imageBoxCurrent.shape
     dictObjects = {}
@@ -125,7 +139,8 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
                     xEnd = xBeg + objWidth
                     yEnd = yBeg + objHeight
                     rectCurrent = Rectangle(yBeg, yEnd, xBeg, xEnd)
-                    doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles)
+                    doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles) or \
+                            rectCurrent.doesOverlapRectangles(listRectangles)
                     if not doesIntersect:
                         listRectangles.append(rectCurrent)
                         break
@@ -149,6 +164,10 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
  
     return dictObjects
 
+# If final images are downscaled (becuase NN does not need full-scale image to
+# perform detection) then coordinates of objects in the images and information
+# about the images also changes, so the function applies those changes to the
+# dictionary which stores the information.
 def scaleCoordinates(dictObjects, factor):
     for key in dictObjects:
         dictObjects[key]["x"] = round(dictObjects[key]["x"] * factor)
@@ -156,6 +175,7 @@ def scaleCoordinates(dictObjects, factor):
         dictObjects[key]["height"] = round(dictObjects[key]["height"] * factor)
         dictObjects[key]["width"] = round(dictObjects[key]["width"] * factor)
 
+# Randomly changes brightness of the image
 def variateBrightness(img):
     incr = random.randint(-60, 60)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -186,7 +206,7 @@ for i in range(sampleSetSize):
         scaleCoordinates(dictObjects, rescaleCoef)
     if DO_VARIATE_BRIGHTNESS:
         imageBoxCurrent = variateBrightness(imageBoxCurrent)
-    imageBoxCurrent = cv2.GaussianBlur(imageBoxCurrent, (5, 5), 0)
+    imageBoxCurrent = cv2.GaussianBlur(imageBoxCurrent, (3, 3), 0)
 
     outImageName = str(i) + ".png"
     outImagePath = dirnameOutputFull + "/" + outImageName
