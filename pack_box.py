@@ -30,10 +30,10 @@ MAX_OBJECTS_COUNT = 3
 DO_VARIATE_BRIGHTNESS = False
 
 # Paramerters which can be set to default values
-doCropBox = True
-rescaleCoef = 1.0
-sampleSetSize = 30
-backgroundFilename = "box_white.jpg"
+DO_CROP_BOX = True
+RESCALE_COEF = 1.0
+SAMPLE_SET_SIZE = 30
+BACKGROUND_FILENAME = "box_white.jpg"
 
 # Returns list of images (of objects) and names of the images from
 # the directory which is given as parameter to the function.
@@ -49,14 +49,14 @@ def getObjectImages(parentDirectory):
 # Returns specified image from the specified directory, which is supposed to be
 # used as background to put objects on. If needed, the background is cropped
 # to indicated region (containing only the box with the objects).
-def getImageBackground(backgroundDir, backgroundFilename, doCropBox):
-    backgroundPath = backgroundDir + "/" + backgroundFilename
+def getImageBackground(backgroundDir, BACKGROUND_FILENAME, DO_CROP_BOX):
+    backgroundPath = backgroundDir + "/" + BACKGROUND_FILENAME
     if not isfile(backgroundPath):
         print("Error: no such file " + backgroundPath)
         return np.zeros((0, 0, 3), np.uint8)
 
     imageBackground = cv2.imread(backgroundPath, cv2.IMREAD_UNCHANGED)
-    dictBoxBorders = readConfigSection(BACKGROUND_DIR, backgroundFilename)
+    dictBoxBorders = readConfigSection(BACKGROUND_DIR, BACKGROUND_FILENAME)
 
     boxTop = np.int(dictBoxBorders["top"])
     boxBottom = np.int(dictBoxBorders["bottom"])
@@ -191,19 +191,19 @@ def variateBrightness(img):
     img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     return img
 
-imageBox = getImageBackground(BACKGROUND_DIR, backgroundFilename, doCropBox)
+imageBox = getImageBackground(BACKGROUND_DIR, BACKGROUND_FILENAME, DO_CROP_BOX)
 objectImages, imageNames = getObjectImages(OBJECTS_DIR)
 stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
 dirnameOutputFull = DIRNAME_OUTPUT + "/" + stringTime
 subprocess.call(["mkdir", "-p", dirnameOutputFull])
 
 descPictures = {}
-for i in range(sampleSetSize):
+for i in range(SAMPLE_SET_SIZE):
     imageBoxCurrent = imageBox.copy()
     dictObjects = putImagesOnBackground(imageBoxCurrent, objectImages, imageNames)
-    if rescaleCoef != 1.0:
-        imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = rescaleCoef, fy = rescaleCoef)
-        scaleCoordinates(dictObjects, rescaleCoef)
+    if RESCALE_COEF != 1.0:
+        imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = rescaleCoef)
+        scaleCoordinates(dictObjects, RESCALE_COEF)
     if DO_VARIATE_BRIGHTNESS:
         imageBoxCurrent = variateBrightness(imageBoxCurrent)
     imageBoxCurrent = cv2.GaussianBlur(imageBoxCurrent, (3, 3), 0)
