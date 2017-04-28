@@ -8,7 +8,7 @@ import os
 from random import randint
 from random import shuffle
 from time import gmtime, strftime
-from os.path import isfile
+from os.path import isfile, splitext
 
 from rotate_image import rotateImage
 from image_check import getImageNames
@@ -16,10 +16,13 @@ from config_file import readConfigSection, writeConfigFile
 from put_object_on_background import putObjectOnBackground
 from rectangle import Rectangle
 from object_image_description import ObjectImageDescription
+from gray_to_rgb import grayToRgb, generateDictColors
 
 # Constants
 WINDOW_NAME = "Box"
 DIRNAME_OUTPUT = "output"
+DIRNAME_OUT_IMAGES = "images"
+DIRNAME_OUT_MARKUP = "markup"
 BACKGROUND_DIR = "./sources/background"
 OBJECTS_DIR = "./sources/objects"
 INTERSECT_COUNTER_LIMIT = 100
@@ -28,6 +31,7 @@ OVERSIZE_COUNTER_LIMIT = 100
 DO_DROP_OBJECTS = True
 MAX_OBJECTS_COUNT = 3
 DO_VARIATE_BRIGHTNESS = False
+DO_WRITE_MARKUP = False
 
 # Paramerters which can be set to default values
 DO_CROP_BOX = True
@@ -87,7 +91,7 @@ def decideTakenImages(numImages):
 # The function randomly selects images from the list 'objectImages' and places
 # them on the background of 'imageBoxCurrent' with random position and
 # orientation trying to avoid intersections.
-def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
+def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkup = None):
     height, width, numChannels = imageBoxCurrent.shape
     dictObjects = {}
     listRectangles = []
@@ -158,7 +162,7 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames):
                 objDesc.x = (yBeg + yEnd) / 2.0
 
                 putObjectOnBackground(imageBoxCurrent, imageRotated, \
-                    [xBeg, yBeg, xEnd, yEnd])
+                    [xBeg, yBeg, xEnd, yEnd], i + 1, imageMarkup)
 
         dictObjects[objectName] = objDesc.getDictionary(cornersRot)
  
@@ -192,17 +196,24 @@ def variateBrightness(img):
     return img
 
 imageBox = getImageBackground(BACKGROUND_DIR, BACKGROUND_FILENAME, DO_CROP_BOX)
+boxHeight, boxWidth, boxChannels = imageBox.shape
 objectImages, imageNames = getObjectImages(OBJECTS_DIR)
+dictColors = generateDictColors(len(imageNames))
 stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
-dirnameOutputFull = DIRNAME_OUTPUT + "/" + stringTime
+dirnameOutputFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_IMAGES
+dirnameMarkupFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_MARKUP
 subprocess.call(["mkdir", "-p", dirnameOutputFull])
+subprocess.call(["mkdir", "-p", dirnameMarkupFull])
 
 descPictures = {}
 for i in range(SAMPLE_SET_SIZE):
     imageBoxCurrent = imageBox.copy()
-    dictObjects = putImagesOnBackground(imageBoxCurrent, objectImages, imageNames)
+    imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8) if DO_WRITE_MARKUP else None
+    dictObjects = putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkupCurrent)
     if RESCALE_COEF != 1.0:
         imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = rescaleCoef)
+        if DO_WRITE_MARKUP:
+            imageMarkupCurrent = cv2.resize(imageMarkupCurrent, (0, 0), fx = RESCALE_COEF, fy = rescaleCoef)
         scaleCoordinates(dictObjects, RESCALE_COEF)
     if DO_VARIATE_BRIGHTNESS:
         imageBoxCurrent = variateBrightness(imageBoxCurrent)
@@ -211,7 +222,18 @@ for i in range(SAMPLE_SET_SIZE):
     outImageName = str(i) + ".png"
     outImagePath = dirnameOutputFull + "/" + outImageName
     cv2.imwrite(outImagePath, imageBoxCurrent)
+    if DO_WRITE_MARKUP:
+        imageMarkupColor = grayToRgb(imageMarkupCurrent, dictColors)
+        outMarkupPath = dirnameMarkupFull + "/" + outImageName
+        cv2.imwrite(outMarkupPath, imageMarkupColor)
 
     descPictures[outImageName] = dictObjects
 
 writeConfigFile(dirnameOutputFull, descPictures)
+if DO_WRITE_MARKUP:
+    writtenDict = {}
+    writtenDict["colors"] = {}
+    for key in dictColors:
+        currentObjectName = splitext(imageNames[key])[0]
+        writtenDict["colors"][currentObjectName] = dictColors[key]
+    writeConfigFile(dirnameMarkupFull, writtenDict)

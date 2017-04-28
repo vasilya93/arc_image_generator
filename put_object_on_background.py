@@ -6,7 +6,7 @@ import numpy as np
 # Puts specified image of object onto specified image of background
 # in indicated position considering transparancy of the image of the
 # object.
-def putObjectOnBackground(imageBoxCurrent, objImage, borders):
+def putObjectOnBackground(imageBoxCurrent, objImage, borders, objectIndex = None, imageMarkup = None):
     xBeg = borders[0]
     yBeg = borders[1]
     xEnd = borders[2]
@@ -31,6 +31,10 @@ def putObjectOnBackground(imageBoxCurrent, objImage, borders):
     imageRed[imageMask <= 0] = imageAreaRed[imageMask <= 0]
     imageGreen[imageMask <= 0] = imageAreaGreen[imageMask <= 0]
     imageBlue[imageMask <= 0] = imageAreaBlue[imageMask <= 0]
+
+    if not ((imageMarkup is None) or (objectIndex is None)):
+        markupArea = imageMarkup[yBeg:yEnd, xBeg:xEnd]
+        markupArea[imageMask > 0] = np.uint8(objectIndex)
 
     imageObject = np.zeros([yEnd - yBeg, xEnd - xBeg, 3], np.uint8)
     imageObject[:, :, 0] = imageRed[:, :]
