@@ -23,11 +23,20 @@ The script *pack_box.py* is the main part of the package - it takes object image
 * DO_DROP_OBJECTS - if set to True, the script does not try to put all of the objects into the image it once - it selects MAX_OBJECTS_COUNT number of object and tries to fit them into the box;
 * MAX_OBJECTS_COUNT - maximal number of objects, which the script tries to fit into the image if DO_DROP_OBJECTS is set to True.
 
-After the script *pack_box.py* is run, generated images can be found in the directory *output* in subdirectory with corresponding date and time. Apart from the images, in the directory there is a file *config.ini* with information about positions of objects in the images.
+After the script *pack_box.py* is run, generated images can be found in the directory *output/<date_time>/images*, where *<date_time>* is name of the directory corresponding to the time when the script was run. Apart from the images, in the directory there is a file *config.ini* with information about positions of objects in the images.
 
 To get information about positions of the objects in the images programmatically, one can use function *readConfigFile* from the file *config_file.py*. The function could be used like this:
 ```
 from config_file import readConfigFile
-dictionary_images = readConfigFile("output/20170101_000102")
+dictionary_images = readConfigFile("output/20170101_000102/images")
 ```
 Variable *dictionary_images* in this case will contain dictionary with keys equals to the names of the image in the directory and values equal to dictionaries with properties of objects in the images.
+
+# Color segmentation
+
+The script *pack_box.py* allows to generate "segmented" images where background is represented with black color and region of each of the rest of the objects is represented with some different color. To enable generation of these segmented images, it is necessary to set the variable DO_WRITE_MARKUP in *pack_box.py* to *True*. Generated image are placed in the directory *output/<date_time>/markup*. Besides, in this directory file *config.ini* is placed, in which information about coding colors of the objects are placed. To read the file, one can also use function *readConfigFile* from the script *config_file.py*. The function could be used like this:
+```
+from config_file import readConfigFile
+dictionary_colors = readConfigFile("output/20170101_000102/markup")
+```
+Variable *dictionary_colors* in this case will contain dictionary with keys equals to the names of the objects values equal to tuples with colors corresponding to the objects.
