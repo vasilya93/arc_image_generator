@@ -13,26 +13,26 @@ class Rectangle:
         doesOverlap = False
         for rect in rectangles:
             # top left corner
-            doesOverlap = doesOverlap or (self.left > rect.left and \
-                self.left < rect.right and self.top > rect.top and self.top < rect.bottom)
+            doesOverlap = doesOverlap or (self.left >= rect.left and \
+                self.left < rect.right and self.top >= rect.top and self.top < rect.bottom)
             # bottom left corner
-            doesOverlap = doesOverlap or (self.left > rect.left and \
-                self.left < rect.right and self.bottom > rect.top and self.bottom < rect.bottom)
+            doesOverlap = doesOverlap or (self.left >= rect.left and \
+                self.left < rect.right and self.bottom > rect.top and self.bottom <= rect.bottom)
             # top right corner
             doesOverlap = doesOverlap or (self.right > rect.left and \
-                self.right < rect.right and self.top > rect.top and self.top < rect.bottom)
+                self.right <= rect.right and self.top >= rect.top and self.top < rect.bottom)
             # bottom right corner
             doesOverlap = doesOverlap or (self.right > rect.left and \
-                self.right < rect.right and self.bottom > rect.top and self.bottom < rect.bottom)
+                self.right <= rect.right and self.bottom > rect.top and self.bottom <= rect.bottom)
 
-            doesOverlap = doesOverlap or (rect.left > self.left and \
-                rect.left < self.right and rect.top > self.top and rect.top < self.bottom)
-            doesOverlap = doesOverlap or (rect.left > self.left and \
-                rect.left < self.right and rect.bottom > self.top and rect.bottom < self.bottom)
+            doesOverlap = doesOverlap or (rect.left >= self.left and \
+                rect.left < self.right and rect.top >= self.top and rect.top < self.bottom)
+            doesOverlap = doesOverlap or (rect.left >= self.left and \
+                rect.left < self.right and rect.bottom > self.top and rect.bottom <= self.bottom)
             doesOverlap = doesOverlap or (rect.right > self.left and \
-                rect.right < self.right and rect.top > self.top and rect.top < self.bottom)
+                rect.right <= self.right and rect.top >= self.top and rect.top < self.bottom)
             doesOverlap = doesOverlap or (rect.right > self.left and 
-                rect.right < self.right and rect.bottom > self.top and rect.bottom < self.bottom)
+                rect.right <= self.right and rect.bottom > self.top and rect.bottom <= self.bottom)
 
             if doesOverlap:
                 break
@@ -44,10 +44,10 @@ class Rectangle:
     def doesIntersectRectangles(self, rectangles):
         doesIntersect = False
         for rect in rectangles:
-            doesIntersect = doesIntersect or (self.left < rect.left and \
-                self.right > rect.right and self.top > rect.top and self.bottom < rect.bottom)
-            doesIntersect = doesIntersect or (rect.left < self.left and \
-                rect.right > self.right and rect.top > self.top and rect.bottom < self.bottom)
+            doesIntersect = doesIntersect or (self.left <= rect.left and \
+                self.right >= rect.right and self.top >= rect.top and self.bottom <= rect.bottom)
+            doesIntersect = doesIntersect or (rect.left <= self.left and \
+                rect.right >= self.right and rect.top >= self.top and rect.bottom <= self.bottom)
 
             if doesIntersect:
                 break

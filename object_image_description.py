@@ -28,6 +28,11 @@ class ObjectImageDescription:
         self.xRightBottom = 0.0
         self.yRightBottom = 0.0
 
+        self.xBeg = 0.0
+        self.yBeg = 0.0
+        self.xEnd = 0.0
+        self.yEnd = 0.0
+
     def getDictionary(self, cornersRot):
         dictResult = {}
 
@@ -44,6 +49,11 @@ class ObjectImageDescription:
 	dictResult["y_rel"] = (self.y / self.imageHeight) * 2 - 1 if self.isPresent else 0.0
         dictResult["height"] = self.height if self.isPresent else 0
         dictResult["width"] = self.width if self.isPresent else 0
+
+        dictResult["x_beg"] = self.xBeg if self.isPresent else 0
+        dictResult["y_beg"] = self.yBeg if self.isPresent else 0
+        dictResult["x_end"] = self.xEnd if self.isPresent else 0
+        dictResult["y_end"] = self.yEnd if self.isPresent else 0
 
         dictResult["x_left_top"] = absToRel(self.imageWidth, self.x + cornersRot[0][0]) \
                 if self.isPresent else 0.0
@@ -64,5 +74,6 @@ class ObjectImageDescription:
                 if self.isPresent else 0.0
         dictResult["y_right_bottom"] = absToRel(self.imageHeight, self.y + cornersRot[3][1]) \
                 if self.isPresent else 0.0
+
 
         return dictResult

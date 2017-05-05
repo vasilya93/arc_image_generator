@@ -5,6 +5,7 @@ import math
 import subprocess
 import random
 import os
+import time
 from random import randint
 from random import shuffle
 from time import gmtime, strftime
@@ -38,6 +39,10 @@ DO_CROP_BOX = True
 RESCALE_COEF = 1.0
 SAMPLE_SET_SIZE = 30
 BACKGROUND_FILENAME = "box_white.jpg"
+
+DO_WRITE_LOG_FILE = True
+
+logFile = None
 
 # Returns list of images (of objects) and names of the images from
 # the directory which is given as parameter to the function.
@@ -138,11 +143,11 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkup
             if objDesc.isPresent:
                 intersectCounter = 0
                 while True:
-                    xBeg = randint(0, width - objWidth)
-                    yBeg = randint(0, height - objHeight)
-                    xEnd = xBeg + objWidth
-                    yEnd = yBeg + objHeight
-                    rectCurrent = Rectangle(yBeg, yEnd, xBeg, xEnd)
+                    objDesc.xBeg = randint(0, width - objWidth)
+                    objDesc.yBeg = randint(0, height - objHeight)
+                    objDesc.xEnd = objDesc.xBeg + objWidth
+                    objDesc.yEnd = objDesc.yBeg + objHeight
+                    rectCurrent = Rectangle(objDesc.yBeg, objDesc.yEnd, objDesc.xBeg, objDesc.xEnd)
                     doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles) or \
                             rectCurrent.doesOverlapRectangles(listRectangles)
                     if not doesIntersect:
@@ -158,11 +163,11 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkup
             # Once the object is rotated and its position is selected, we put it
             # onto the image
             if objDesc.isPresent:
-                objDesc.x = (xBeg + xEnd) / 2.0
-                objDesc.x = (yBeg + yEnd) / 2.0
+                objDesc.x = (objDesc.xBeg + objDesc.xEnd) / 2.0
+                objDesc.y = (objDesc.yBeg + objDesc.yEnd) / 2.0
 
                 putObjectOnBackground(imageBoxCurrent, imageRotated, \
-                    [xBeg, yBeg, xEnd, yEnd], i + 1, imageMarkup)
+                    [objDesc.xBeg, objDesc.yBeg, objDesc.xEnd, objDesc.yEnd], i + 1, imageMarkup)
 
         dictObjects[objectName] = objDesc.getDictionary(cornersRot)
  
@@ -178,6 +183,11 @@ def scaleCoordinates(dictObjects, factor):
         dictObjects[key]["y"] = round(dictObjects[key]["y"] * factor)
         dictObjects[key]["height"] = round(dictObjects[key]["height"] * factor)
         dictObjects[key]["width"] = round(dictObjects[key]["width"] * factor)
+        dictObjects[key]["x_beg"] = round(dictObjects[key]["x_beg"] * factor)
+        dictObjects[key]["y_beg"] = round(dictObjects[key]["y_beg"] * factor)
+        dictObjects[key]["x_end"] = round(dictObjects[key]["x_end"] * factor)
+        dictObjects[key]["y_end"] = round(dictObjects[key]["y_end"] * factor)
+
 
 # Randomly changes brightness of the image
 def variateBrightness(img):
@@ -195,6 +205,8 @@ def variateBrightness(img):
     img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     return img
 
+#timeBeginning = time.time()
+
 imageBox = getImageBackground(BACKGROUND_DIR, BACKGROUND_FILENAME, DO_CROP_BOX)
 boxHeight, boxWidth, boxChannels = imageBox.shape
 objectImages, imageNames = getObjectImages(OBJECTS_DIR)
@@ -202,8 +214,13 @@ dictColors = generateDictColors(len(imageNames))
 stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
 dirnameOutputFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_IMAGES
 dirnameMarkupFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_MARKUP
+
 subprocess.call(["mkdir", "-p", dirnameOutputFull])
 subprocess.call(["mkdir", "-p", dirnameMarkupFull])
+
+if DO_WRITE_LOG_FILE:
+    logFilePath = DIRNAME_OUTPUT + "/" + stringTime + "/log.txt"
+    logFile = open(logFilePath, "w")
 
 descPictures = {}
 for i in range(SAMPLE_SET_SIZE):
@@ -211,7 +228,7 @@ for i in range(SAMPLE_SET_SIZE):
     imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8) if DO_WRITE_MARKUP else None
     dictObjects = putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkupCurrent)
     if RESCALE_COEF != 1.0:
-        imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = rescaleCoef)
+        imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = RESCALE_COEF)
         if DO_WRITE_MARKUP:
             imageMarkupCurrent = cv2.resize(imageMarkupCurrent, (0, 0), fx = RESCALE_COEF, fy = rescaleCoef)
         scaleCoordinates(dictObjects, RESCALE_COEF)
@@ -224,10 +241,24 @@ for i in range(SAMPLE_SET_SIZE):
     cv2.imwrite(outImagePath, imageBoxCurrent)
     if DO_WRITE_MARKUP:
         imageMarkupColor = grayToRgb(imageMarkupCurrent, dictColors)
-        outMarkupPath = dirnameMarkupFull + "/" + outImageName
-        cv2.imwrite(outMarkupPath, imageMarkupColor)
+        #outMarkupPath = dirnameMarkupFull + "/" + outImageName
+        #cv2.imwrite(outMarkupPath, imageMarkupColor)
+        cv2.imwrite(outMarkupPath, imageMarkupCurrent)
 
     descPictures[outImageName] = dictObjects
+ 
+    if DO_WRITE_LOG_FILE:
+        logFile.write(outImageName + "\r\n")
+        for objectName in dictObjects:
+            if dictObjects[objectName]["is_present"] == 1.0:
+                logFile.write("\t" + objectName + "\r\n")
+                logFile.write("\tleft: " + str(dictObjects[objectName]["x_beg"]) + "\r\n")
+                logFile.write("\ttop: " + str(dictObjects[objectName]["y_beg"]) + "\r\n")
+                logFile.write("\tright: " + str(dictObjects[objectName]["x_end"]) + "\r\n")
+                logFile.write("\tbottom: " + str(dictObjects[objectName]["y_end"]) + "\r\n\r\n")
+
+        logFile.write("\r\n")
+        logFile.write(" ")
 
 writeConfigFile(dirnameOutputFull, descPictures)
 if DO_WRITE_MARKUP:
@@ -237,3 +268,6 @@ if DO_WRITE_MARKUP:
         currentObjectName = splitext(imageNames[key])[0]
         writtenDict["colors"][currentObjectName] = dictColors[key]
     writeConfigFile(dirnameMarkupFull, writtenDict)
+
+if DO_WRITE_LOG_FILE:
+    logFile.close()
