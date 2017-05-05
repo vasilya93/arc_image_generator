@@ -103,7 +103,7 @@ for imageName in imageNames:
     doChangeImage = False; doExit = False
     while not (doChangeImage or doExit):
         cv2.imshow(WINDOW_NAME, ImageShown)
-        keyCode = cv2.waitKey(20)
+        keyCode = cv2.waitKey(20) & 0xEFFFFF
         doChangeImage, doExit = changeProgramMode(keyCode)
     addImageData(imageData, imageName)
     if doExit:
