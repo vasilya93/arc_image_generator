@@ -13,7 +13,7 @@ from os.path import isfile, splitext
 
 from rotate_image import rotateImage
 from image_check import getImageNames
-from config_file import readConfigSection, writeConfigFile
+from config_file import readConfigFile, writeConfigFile
 from put_object_on_background import putObjectOnBackground
 from rectangle import Rectangle
 from object_image_description import ObjectImageDescription
@@ -30,18 +30,16 @@ INTERSECT_COUNTER_LIMIT = 100
 OVERSIZE_COUNTER_LIMIT = 100
 
 DO_DROP_OBJECTS = True
-MAX_OBJECTS_COUNT = 3
-DO_VARIATE_BRIGHTNESS = False
+MAX_OBJECTS_COUNT = 5
+DO_VARIATE_BRIGHTNESS = True
 DO_WRITE_MARKUP = False
+IS_MARKUP_COLORED = False
 
 # Paramerters which can be set to default values
-DO_CROP_BOX = True
-RESCALE_COEF = 1.0
-SAMPLE_SET_SIZE = 30
-BACKGROUND_FILENAME = "box_white.jpg"
+RESCALE_COEF = 0.6
+SAMPLE_SET_SIZE = 50000
 
-DO_WRITE_LOG_FILE = True
-
+DO_WRITE_LOG_FILE = False
 logFile = None
 
 # Returns list of images (of objects) and names of the images from
@@ -58,21 +56,30 @@ def getObjectImages(parentDirectory):
 # Returns specified image from the specified directory, which is supposed to be
 # used as background to put objects on. If needed, the background is cropped
 # to indicated region (containing only the box with the objects).
-def getImageBackground(backgroundDir, BACKGROUND_FILENAME, DO_CROP_BOX):
-    backgroundPath = backgroundDir + "/" + BACKGROUND_FILENAME
-    if not isfile(backgroundPath):
-        print("Error: no such file " + backgroundPath)
-        return np.zeros((0, 0, 3), np.uint8)
-
-    imageBackground = cv2.imread(backgroundPath, cv2.IMREAD_UNCHANGED)
-    dictBoxBorders = readConfigSection(BACKGROUND_DIR, BACKGROUND_FILENAME)
-
-    boxTop = np.int(dictBoxBorders["top"])
-    boxBottom = np.int(dictBoxBorders["bottom"])
-    boxLeft = np.int(dictBoxBorders["left"])
-    boxRight = np.int(dictBoxBorders["right"])
-    imageBox = imageBackground[boxTop:boxBottom, boxLeft:boxRight, :]
-    return imageBox
+def getImagesBackground(backgroundDir):
+    imageNames = getImageNames(backgroundDir)
+    dictBoxBorders = readConfigFile(backgroundDir)
+    backgroundImages = []
+    for filename in imageNames:
+        imagePath = backgroundDir + "/" + filename
+        imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
+        boxTop = np.int(dictBoxBorders[filename]["top"])
+        boxBottom = np.int(dictBoxBorders[filename]["bottom"])
+        boxLeft = np.int(dictBoxBorders[filename]["left"])
+        boxRight = np.int(dictBoxBorders[filename]["right"])
+        imageBox = imageFull[boxTop:boxBottom, boxLeft:boxRight, :]
+        backgroundImages.append(imageBox)
+    if len(backgroundImages) != 0:
+        backgroundImages.sort(key = lambda x: x.shape[0])
+        minHeight = backgroundImages[0].shape[0]
+        backgroundImages.sort(key = lambda x: x.shape[1])
+        minWidth = backgroundImages[0].shape[1]
+        for index, image in enumerate(backgroundImages):
+            height, width, channels = image.shape
+            x_beg = (width - minWidth) / 2; x_end = x_beg + minWidth
+            y_beg = (height - minHeight) / 2; y_end = y_beg + minHeight
+            backgroundImages[index] = image[y_beg:y_end, x_beg:x_end, :]
+    return backgroundImages
 
 # Adds new dictionary to the list of dictioanries. Each of the dictionaries in
 # the list contains information about borders of a square.
@@ -205,10 +212,15 @@ def variateBrightness(img):
     img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     return img
 
-#timeBeginning = time.time()
+backgroundImages = getImagesBackground(BACKGROUND_DIR)
+numBackgroundImages = len(backgroundImages)
+if numBackgroundImages == 0:
+    print("Error: no background images were found. Exiting...")
+    exit(1)
 
-imageBox = getImageBackground(BACKGROUND_DIR, BACKGROUND_FILENAME, DO_CROP_BOX)
+imageBox = backgroundImages[0]
 boxHeight, boxWidth, boxChannels = imageBox.shape
+
 objectImages, imageNames = getObjectImages(OBJECTS_DIR)
 dictColors = generateDictColors(len(imageNames))
 stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
@@ -224,13 +236,14 @@ if DO_WRITE_LOG_FILE:
 
 descPictures = {}
 for i in range(SAMPLE_SET_SIZE):
-    imageBoxCurrent = imageBox.copy()
+    backgroundIndex = randint(0, numBackgroundImages - 1)
+    imageBoxCurrent = backgroundImages[backgroundIndex].copy()
     imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8) if DO_WRITE_MARKUP else None
     dictObjects = putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkupCurrent)
     if RESCALE_COEF != 1.0:
         imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = RESCALE_COEF)
         if DO_WRITE_MARKUP:
-            imageMarkupCurrent = cv2.resize(imageMarkupCurrent, (0, 0), fx = RESCALE_COEF, fy = rescaleCoef)
+            imageMarkupCurrent = cv2.resize(imageMarkupCurrent, (0, 0), fx = RESCALE_COEF, fy = RESCALE_COEF)
         scaleCoordinates(dictObjects, RESCALE_COEF)
     if DO_VARIATE_BRIGHTNESS:
         imageBoxCurrent = variateBrightness(imageBoxCurrent)
@@ -241,9 +254,11 @@ for i in range(SAMPLE_SET_SIZE):
     cv2.imwrite(outImagePath, imageBoxCurrent)
     if DO_WRITE_MARKUP:
         imageMarkupColor = grayToRgb(imageMarkupCurrent, dictColors)
-        #outMarkupPath = dirnameMarkupFull + "/" + outImageName
-        #cv2.imwrite(outMarkupPath, imageMarkupColor)
-        cv2.imwrite(outMarkupPath, imageMarkupCurrent)
+        outMarkupPath = dirnameMarkupFull + "/" + outImageName
+        if IS_MARKUP_COLORED:
+            cv2.imwrite(outMarkupPath, imageMarkupColor)
+        else:
+            cv2.imwrite(outMarkupPath, imageMarkupCurrent)
 
     descPictures[outImageName] = dictObjects
  
