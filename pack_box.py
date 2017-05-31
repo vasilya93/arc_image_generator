@@ -13,7 +13,7 @@ from time import gmtime, strftime
 from os.path import isfile, splitext
 
 from rotate_image import rotateImage
-from image_check import getImageNames
+from image_check import getImageNames, getDirnamesImages
 from config_file import readConfigFile, writeConfigFile
 from put_object_on_background import putObjectOnBackground
 from rectangle import Rectangle
@@ -51,13 +51,17 @@ logFile = None
 # Returns list of images (of objects) and names of the images from
 # the directory which is given as parameter to the function.
 def getObjectImages(parentDirectory):
-    imageNames = getImageNames(parentDirectory)
-    objectImages = []
-    for filename in imageNames:
-        imagePath = parentDirectory + "/" + filename
-        imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
-        objectImages.append(imageFull)
-    return (objectImages, imageNames)
+    dictDirnamesImageNames = getDirnamesImages(parentDirectory)
+    dictObjectImages = {}
+    objectNames = []
+    for dirname in dictDirnamesImageNames:
+        objectNames.append(dirname)
+        dictObjectImages[dirname] = []
+        for imageName in dictDirnamesImageNames[dirname]:
+            imagePath = parentDirectory + "/" + dirname + "/" + imageName
+            imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
+            dictObjectImages[dirname].append(imageFull)
+    return (dictObjectImages, objectNames)
 
 # Returns specified image from the specified directory, which is supposed to be
 # used as background to put objects on. If needed, the background is cropped
@@ -203,15 +207,15 @@ def selectObjectPosition(objMarkup, objDesc, height, width, objHeight, objWidth,
 # The function randomly selects images from the list 'objectImages' and places
 # them on the background of 'imageBoxCurrent' with random position and
 # orientation trying to avoid intersections.
-def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkup = None):
+def putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, imageMarkup = None):
     height, width, numChannels = imageBoxCurrent.shape
     dictObjects = {}
     listRectangles = []
-    isImageTaken = decideTakenImages(len(objectImages))
+    isImageTaken = decideTakenImages(len(objectNames))
 
     # shuffling images of the objects, so that we do not take them
     # in the same order every time
-    imageIndeces = range(len(objectImages))
+    imageIndeces = range(len(objectNames))
     shuffle(imageIndeces)
 
     for i in imageIndeces:
@@ -223,15 +227,17 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkup
         else:
             objDesc.isPresent = isImageTaken[i]
 
-        objectImage = objectImages[i]
-        objectName = imageNames[i]
+        objectName = objectNames[i]
+        numObjectImages = len(dictObjectImages[objectName])
+        currentObjectImageIndex = random.randint(0, numObjectImages - 1)
+        objectImage = dictObjectImages[objectName][currentObjectImageIndex]
         cornersRot = []
         if objDesc.isPresent:
             objDesc.height, objDesc.width, channelsOrig = objectImage.shape
 
             # Rotating image of the object and checking whether the size is good
             imageRotated, cornersRot, objHeight, objWidth = rotateObjectImage(objDesc, \
-                    objectImage, \
+                  objectImage, \
                     height, \
                     width)
 
@@ -297,8 +303,8 @@ if numBackgroundImages == 0:
 imageBox = backgroundImages[0]
 boxHeight, boxWidth, boxChannels = imageBox.shape
 
-objectImages, imageNames = getObjectImages(OBJECTS_DIR)
-dictColors = generateDictColors(len(imageNames))
+dictObjectImages, objectNames = getObjectImages(OBJECTS_DIR)
+dictColors = generateDictColors(len(objectNames))
 stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
 dirnameOutputFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_IMAGES
 dirnameMarkupFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_MARKUP
@@ -320,7 +326,7 @@ for i in range(SAMPLE_SET_SIZE):
     if DO_WRITE_MARKUP or DO_PUT_DENSELY:
         imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8)
 
-    dictObjects = putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkupCurrent)
+    dictObjects = putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, imageMarkupCurrent)
 
     if RESCALE_COEF != 1.0:
         imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = RESCALE_COEF)
@@ -369,7 +375,7 @@ if DO_WRITE_MARKUP:
     writtenDict = {}
     writtenDict["colors"] = {}
     for key in dictColors:
-        currentObjectName = splitext(imageNames[key])[0]
+        currentObjectName = objectNames[key]
         writtenDict["colors"][currentObjectName] = dictColors[key]
     writeConfigFile(dirnameMarkupFull, writtenDict)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 from os import listdir
-from os.path import isfile, join, splitext
+from os.path import isfile, isdir, join, splitext
 
 IMAGE_EXTENSIONS = [".jpg", ".png"]
 
@@ -19,3 +19,11 @@ def getImageNames(parentDirectory):
             image_names.append(full_name)
     return image_names
 
+def getDirnamesImages(parentDirectory):
+    dirnames = [d for d in listdir(parentDirectory) if isdir(join(parentDirectory, d))]
+    dictDirnamesImages = {}
+    for dirname in dirnames:
+        imageNames = getImageNames(parentDirectory + "/" + dirname)
+        if len(imageNames) != 0:
+            dictDirnamesImages[dirname] = imageNames
+    return dictDirnamesImages
