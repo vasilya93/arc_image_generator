@@ -6,6 +6,7 @@ import subprocess
 import random
 import os
 import time
+import sys
 from random import randint
 from random import shuffle
 from time import gmtime, strftime
@@ -18,6 +19,10 @@ from put_object_on_background import putObjectOnBackground
 from rectangle import Rectangle
 from object_image_description import ObjectImageDescription
 from gray_to_rgb import grayToRgb, generateDictColors
+from get_overlap import getOverlap
+
+# TODO: ensure that some of the objects is dropped when their total area is too big
+#       (overlap is too high)
 
 # Constants
 WINDOW_NAME = "Box"
@@ -34,10 +39,11 @@ MAX_OBJECTS_COUNT = 5
 DO_VARIATE_BRIGHTNESS = True
 DO_WRITE_MARKUP = False
 IS_MARKUP_COLORED = False
+DO_PUT_DENSELY = False
 
 # Paramerters which can be set to default values
-RESCALE_COEF = 0.6
-SAMPLE_SET_SIZE = 50000
+RESCALE_COEF = 1
+SAMPLE_SET_SIZE = 50
 
 DO_WRITE_LOG_FILE = False
 logFile = None
@@ -100,6 +106,100 @@ def decideTakenImages(numImages):
         isImageTaken[indexTrue] = True
     return isImageTaken
 
+def rotateObjectImage(objDesc, objectImage, height, width):
+    oversizeCounter = 0
+    imageRotated = None
+    while True:
+        if DO_PUT_DENSELY:
+            objDesc.angle = randint(0, 79)
+            if objDesc.angle > 70:
+                objDesc.angle += 280
+            elif objDesc.angle > 50:
+                objDesc.angle += 210
+            elif objDesc.angle > 30:
+                objDesc.angle += 140
+            elif objDesc.angle > 10:
+                objDesc.angle += 70
+        else:
+            objDesc.angle = randint(0, 359)
+        (imageRotated, cornersRot) = rotateImage(objectImage, \
+                objDesc.angle / 180.0 * math.pi)
+        objHeight, objWidth, objChannels = imageRotated.shape
+        if objHeight > height or objWidth > width:
+            oversizeCounter += 1
+            if oversizeCounter >= OVERSIZE_COUNTER_LIMIT:
+                print "Warning: object does not fit into the box"
+                objDesc.isPresent = False
+                break
+        else:
+            break
+    return (imageRotated, cornersRot, objHeight, objWidth)
+
+def selectPositionRandom(objDesc, height, width, objHeight, objWidth, \
+        listRectangles):
+    intersectCounter = 0
+    while True:
+        objDesc.xBeg = randint(0, width - objWidth)
+        objDesc.yBeg = randint(0, height - objHeight)
+        objDesc.xEnd = objDesc.xBeg + objWidth
+        objDesc.yEnd = objDesc.yBeg + objHeight
+        rectCurrent = Rectangle(objDesc.yBeg, objDesc.yEnd, objDesc.xBeg, objDesc.xEnd)
+        doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles) or \
+                rectCurrent.doesOverlapRectangles(listRectangles)
+        if not doesIntersect:
+            listRectangles.append(rectCurrent)
+            break
+        else:
+            intersectCounter += 1
+            if intersectCounter >= INTERSECT_COUNTER_LIMIT:
+                print "Warning: object intersects the other objects"
+                objDesc.isPresent = False
+                break
+
+def selectPositionDense(objMarkup, objDesc, height, width, objHeight, objWidth, \
+        listRectangles, imageMarkup):
+        x_range = width - objWidth
+        y_range = height - objHeight
+
+        num_samples = 10
+        x_values = np.round(np.linspace(0, x_range, num_samples))
+        y_values = np.round(np.linspace(0, y_range, num_samples))
+        x_values = x_values.astype(int)
+        y_values = y_values.astype(int)
+
+        grid_x, grid_y = np.meshgrid(x_values, y_values)
+
+        min_overlap = sys.maxint
+        min_overlap_x = -1
+        min_overlap_y = -1
+        for i in range(num_samples):
+            for j in range(num_samples):
+                x_current = grid_x[i, j]
+                y_current = grid_y[i, j]
+                x_end = x_current + objWidth
+                y_end = y_current + objHeight
+
+                overlap = getOverlap(imageMarkup, objMarkup, \
+                        x_current, y_current, x_end, y_end)
+                if overlap < min_overlap:
+                    min_overlap = overlap
+                    min_overlap_x = x_current
+                    min_overlap_y = y_current
+
+        objDesc.xBeg = min_overlap_x
+        objDesc.yBeg = min_overlap_y
+        objDesc.xEnd = min_overlap_x + objWidth
+        objDesc.yEnd = min_overlap_y + objHeight
+
+def selectObjectPosition(objMarkup, objDesc, height, width, objHeight, objWidth, \
+        listRectangles, imageMarkup):
+    if DO_PUT_DENSELY:
+        selectPositionDense(objMarkup, objDesc, height, width, objHeight, objWidth, \
+            listRectangles, imageMarkup)
+    else:
+        selectPositionRandom(objDesc, height, width, objHeight, objWidth, \
+            listRectangles)
+ 
 # The function randomly selects images from the list 'objectImages' and places
 # them on the background of 'imageBoxCurrent' with random position and
 # orientation trying to avoid intersections.
@@ -130,42 +230,18 @@ def putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkup
             objDesc.height, objDesc.width, channelsOrig = objectImage.shape
 
             # Rotating image of the object and checking whether the size is good
-            oversizeCounter = 0
-            while True:
-                objDesc.angle = randint(0, 359)
-                (imageRotated, cornersRot) = rotateImage(objectImage, \
-                        objDesc.angle / 180.0 * math.pi)
-                objHeight, objWidth, objChannels = imageRotated.shape
-                if objHeight > height or objWidth > width:
-                    oversizeCounter += 1
-                    if oversizeCounter >= OVERSIZE_COUNTER_LIMIT:
-                        print "Warning: object does not fit into the box"
-                        objDesc.isPresent = False
-                        break
-                else:
-                    break
+            imageRotated, cornersRot, objHeight, objWidth = rotateObjectImage(objDesc, \
+                    objectImage, \
+                    height, \
+                    width)
 
             # Selecting position for rotated object, and checking that there is
             # no intersection with the other objects
             if objDesc.isPresent:
-                intersectCounter = 0
-                while True:
-                    objDesc.xBeg = randint(0, width - objWidth)
-                    objDesc.yBeg = randint(0, height - objHeight)
-                    objDesc.xEnd = objDesc.xBeg + objWidth
-                    objDesc.yEnd = objDesc.yBeg + objHeight
-                    rectCurrent = Rectangle(objDesc.yBeg, objDesc.yEnd, objDesc.xBeg, objDesc.xEnd)
-                    doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles) or \
-                            rectCurrent.doesOverlapRectangles(listRectangles)
-                    if not doesIntersect:
-                        listRectangles.append(rectCurrent)
-                        break
-                    else:
-                        intersectCounter += 1
-                        if intersectCounter >= INTERSECT_COUNTER_LIMIT:
-                            print "Warning: object intersects the other objects"
-                            objDesc.isPresent = False
-                            break
+                objMarkup = cv2.cvtColor(imageRotated, cv2.COLOR_BGR2GRAY)
+                objMarkup[objMarkup > 0] = i + 1
+                selectObjectPosition(objMarkup, objDesc, height, width, objHeight, objWidth, \
+                        listRectangles, imageMarkup)
  
             # Once the object is rotated and its position is selected, we put it
             # onto the image
@@ -198,7 +274,7 @@ def scaleCoordinates(dictObjects, factor):
 
 # Randomly changes brightness of the image
 def variateBrightness(img):
-    incr = random.randint(-60, 60)
+    incr = random.randint(-30, 30)
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     value = hsv[:,:,2]
     if incr >= 0:
@@ -235,11 +311,17 @@ if DO_WRITE_LOG_FILE:
     logFile = open(logFilePath, "w")
 
 descPictures = {}
+timeBeginning = time.time()
 for i in range(SAMPLE_SET_SIZE):
     backgroundIndex = randint(0, numBackgroundImages - 1)
     imageBoxCurrent = backgroundImages[backgroundIndex].copy()
-    imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8) if DO_WRITE_MARKUP else None
+
+    imageMarkupCurrent = None
+    if DO_WRITE_MARKUP or DO_PUT_DENSELY:
+        imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8)
+
     dictObjects = putImagesOnBackground(imageBoxCurrent, objectImages, imageNames, imageMarkupCurrent)
+
     if RESCALE_COEF != 1.0:
         imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = RESCALE_COEF)
         if DO_WRITE_MARKUP:
@@ -274,6 +356,13 @@ for i in range(SAMPLE_SET_SIZE):
 
         logFile.write("\r\n")
         logFile.write(" ")
+
+    timeCurrent = time.time()
+    timeElapsed = timeCurrent - timeBeginning
+    timePerImage = timeElapsed / (i + 2)
+    timeLeft = (SAMPLE_SET_SIZE - 1 - i) * timePerImage
+    timeLeftString = time.strftime('%H:%M:%S', time.gmtime(int(timeLeft)))
+    print("%dth image is processed, estimated time left is %s" % (i + 1, timeLeftString))
 
 writeConfigFile(dirnameOutputFull, descPictures)
 if DO_WRITE_MARKUP:
