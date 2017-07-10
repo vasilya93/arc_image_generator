@@ -8,45 +8,43 @@ import os
 import time
 import sys
 from random import randint
-from random import shuffle
 from time import gmtime, strftime
 from os.path import isfile, splitext
+from copy import deepcopy
 
-from rotate_image import rotateImage
 from image_check import getImageNames, getDirnamesImages
-from config_file import readConfigFile, writeConfigFile
-from put_object_on_background import putObjectOnBackground
+from config_file import readConfigFile, writeConfigFile, writeSimpleConfig
 from rectangle import Rectangle
-from object_image_description import ObjectImageDescription
-from gray_to_rgb import grayToRgb, generateDictColors
+from gray_to_rgb import grayToRgb, generateDictColors, generateDictGray
 from get_overlap import getOverlap
+from optparse import OptionParser
+from variate_brightness import variateBrightness
+
+from put_images_on_background import putImagesOnBackground
+from generate_object_focused_image import generateObjectFocusedImage
 
 # TODO: ensure that some of the objects is dropped when their total area is too big
 #       (overlap is too high)
 
 # Constants
 WINDOW_NAME = "Box"
-DIRNAME_OUTPUT = "output"
-DIRNAME_OUT_IMAGES = "images"
-DIRNAME_OUT_MARKUP = "markup"
-BACKGROUND_DIR = "./sources/background"
-OBJECTS_DIR = "./sources/objects"
-INTERSECT_COUNTER_LIMIT = 100
-OVERSIZE_COUNTER_LIMIT = 100
 
-DO_DROP_OBJECTS = True
-MAX_OBJECTS_COUNT = 5
-DO_VARIATE_BRIGHTNESS = True
-DO_WRITE_MARKUP = False
-IS_MARKUP_COLORED = False
-DO_PUT_DENSELY = False
+class ParamConfig:
+    INTERSECT_COUNTER_LIMIT = 100
+    OVERSIZE_COUNTER_LIMIT = 100
+    DO_DROP_OBJECTS = True
+    MAX_OBJECTS_COUNT = 5
+    DO_VARIATE_BRIGHTNESS = True
+    DO_RESCALE_OBJECTS = True
+    OBJECT_SCALE_VARIATION = 0.3
+    DO_WRITE_MARKUP = False
+    IS_MARKUP_COLORED = False
+    DO_PUT_DENSELY = False
+    RESCALE_COEF = 1
+    SAMPLE_SET_SIZE = 5
+    DO_WRITE_LOG_FILE = False
 
-# Paramerters which can be set to default values
-RESCALE_COEF = 1
-SAMPLE_SET_SIZE = 50
-
-DO_WRITE_LOG_FILE = False
-logFile = None
+global param_config
 
 # Returns list of images (of objects) and names of the images from
 # the directory which is given as parameter to the function.
@@ -91,177 +89,6 @@ def getImagesBackground(backgroundDir):
             backgroundImages[index] = image[y_beg:y_end, x_beg:x_end, :]
     return backgroundImages
 
-# Adds new dictionary to the list of dictioanries. Each of the dictionaries in
-# the list contains information about borders of a square.
-def addSquareToList(top, bottom, left, right, listSquares):
-    listSquares.append({"top" : top, 
-        "bottom" : bottom,
-        "left" : left,
-        "right" : right })
-
-# Returns array of boolean values of indicated size, where some random of the
-# elements are set to true, and the rest are false. Maximal number of true
-# values is equal to MAX_OBJECTS_COUNT. The function is supposed to be used for
-# random selection of object which will be put into an image.
-def decideTakenImages(numImages):
-    isImageTaken = [False] * numImages
-    for i in range(MAX_OBJECTS_COUNT):
-        indexTrue = random.randint(0, numImages - 1)
-        isImageTaken[indexTrue] = True
-    return isImageTaken
-
-def rotateObjectImage(objDesc, objectImage, height, width):
-    oversizeCounter = 0
-    imageRotated = None
-    while True:
-        if DO_PUT_DENSELY:
-            objDesc.angle = randint(0, 79)
-            if objDesc.angle > 70:
-                objDesc.angle += 280
-            elif objDesc.angle > 50:
-                objDesc.angle += 210
-            elif objDesc.angle > 30:
-                objDesc.angle += 140
-            elif objDesc.angle > 10:
-                objDesc.angle += 70
-        else:
-            objDesc.angle = randint(0, 359)
-        (imageRotated, cornersRot) = rotateImage(objectImage, \
-                objDesc.angle / 180.0 * math.pi)
-        objHeight, objWidth, objChannels = imageRotated.shape
-        if objHeight > height or objWidth > width:
-            oversizeCounter += 1
-            if oversizeCounter >= OVERSIZE_COUNTER_LIMIT:
-                print "Warning: object does not fit into the box"
-                objDesc.isPresent = False
-                break
-        else:
-            break
-    return (imageRotated, cornersRot, objHeight, objWidth)
-
-def selectPositionRandom(objDesc, height, width, objHeight, objWidth, \
-        listRectangles):
-    intersectCounter = 0
-    while True:
-        objDesc.xBeg = randint(0, width - objWidth)
-        objDesc.yBeg = randint(0, height - objHeight)
-        objDesc.xEnd = objDesc.xBeg + objWidth
-        objDesc.yEnd = objDesc.yBeg + objHeight
-        rectCurrent = Rectangle(objDesc.yBeg, objDesc.yEnd, objDesc.xBeg, objDesc.xEnd)
-        doesIntersect = rectCurrent.doesIntersectRectangles(listRectangles) or \
-                rectCurrent.doesOverlapRectangles(listRectangles)
-        if not doesIntersect:
-            listRectangles.append(rectCurrent)
-            break
-        else:
-            intersectCounter += 1
-            if intersectCounter >= INTERSECT_COUNTER_LIMIT:
-                print "Warning: object intersects the other objects"
-                objDesc.isPresent = False
-                break
-
-def selectPositionDense(objMarkup, objDesc, height, width, objHeight, objWidth, \
-        listRectangles, imageMarkup):
-        x_range = width - objWidth
-        y_range = height - objHeight
-
-        num_samples = 10
-        x_values = np.round(np.linspace(0, x_range, num_samples))
-        y_values = np.round(np.linspace(0, y_range, num_samples))
-        x_values = x_values.astype(int)
-        y_values = y_values.astype(int)
-
-        grid_x, grid_y = np.meshgrid(x_values, y_values)
-
-        min_overlap = sys.maxint
-        min_overlap_x = -1
-        min_overlap_y = -1
-        for i in range(num_samples):
-            for j in range(num_samples):
-                x_current = grid_x[i, j]
-                y_current = grid_y[i, j]
-                x_end = x_current + objWidth
-                y_end = y_current + objHeight
-
-                overlap = getOverlap(imageMarkup, objMarkup, \
-                        x_current, y_current, x_end, y_end)
-                if overlap < min_overlap:
-                    min_overlap = overlap
-                    min_overlap_x = x_current
-                    min_overlap_y = y_current
-
-        objDesc.xBeg = min_overlap_x
-        objDesc.yBeg = min_overlap_y
-        objDesc.xEnd = min_overlap_x + objWidth
-        objDesc.yEnd = min_overlap_y + objHeight
-
-def selectObjectPosition(objMarkup, objDesc, height, width, objHeight, objWidth, \
-        listRectangles, imageMarkup):
-    if DO_PUT_DENSELY:
-        selectPositionDense(objMarkup, objDesc, height, width, objHeight, objWidth, \
-            listRectangles, imageMarkup)
-    else:
-        selectPositionRandom(objDesc, height, width, objHeight, objWidth, \
-            listRectangles)
- 
-# The function randomly selects images from the list 'objectImages' and places
-# them on the background of 'imageBoxCurrent' with random position and
-# orientation trying to avoid intersections.
-def putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, imageMarkup = None):
-    height, width, numChannels = imageBoxCurrent.shape
-    dictObjects = {}
-    listRectangles = []
-    isImageTaken = decideTakenImages(len(objectNames))
-
-    # shuffling images of the objects, so that we do not take them
-    # in the same order every time
-    imageIndeces = range(len(objectNames))
-    shuffle(imageIndeces)
-
-    for i in imageIndeces:
-        objDesc = ObjectImageDescription()
-        objDesc.imageWidth = width
-        objDesc.imageHeight = height
-        if not DO_DROP_OBJECTS:
-            objDesc.isPresent = True
-        else:
-            objDesc.isPresent = isImageTaken[i]
-
-        objectName = objectNames[i]
-        numObjectImages = len(dictObjectImages[objectName])
-        currentObjectImageIndex = random.randint(0, numObjectImages - 1)
-        objectImage = dictObjectImages[objectName][currentObjectImageIndex]
-        cornersRot = []
-        if objDesc.isPresent:
-            objDesc.height, objDesc.width, channelsOrig = objectImage.shape
-
-            # Rotating image of the object and checking whether the size is good
-            imageRotated, cornersRot, objHeight, objWidth = rotateObjectImage(objDesc, \
-                  objectImage, \
-                    height, \
-                    width)
-
-            # Selecting position for rotated object, and checking that there is
-            # no intersection with the other objects
-            if objDesc.isPresent:
-                objMarkup = cv2.cvtColor(imageRotated, cv2.COLOR_BGR2GRAY)
-                objMarkup[objMarkup > 0] = i + 1
-                selectObjectPosition(objMarkup, objDesc, height, width, objHeight, objWidth, \
-                        listRectangles, imageMarkup)
- 
-            # Once the object is rotated and its position is selected, we put it
-            # onto the image
-            if objDesc.isPresent:
-                objDesc.x = (objDesc.xBeg + objDesc.xEnd) / 2.0
-                objDesc.y = (objDesc.yBeg + objDesc.yEnd) / 2.0
-
-                putObjectOnBackground(imageBoxCurrent, imageRotated, \
-                    [objDesc.xBeg, objDesc.yBeg, objDesc.xEnd, objDesc.yEnd], i + 1, imageMarkup)
-
-        dictObjects[objectName] = objDesc.getDictionary(cornersRot)
- 
-    return dictObjects
-
 # If final images are downscaled (becuase NN does not need full-scale image to
 # perform detection) then coordinates of objects in the images and information
 # about the images also changes, so the function applies those changes to the
@@ -277,107 +104,246 @@ def scaleCoordinates(dictObjects, factor):
         dictObjects[key]["x_end"] = round(dictObjects[key]["x_end"] * factor)
         dictObjects[key]["y_end"] = round(dictObjects[key]["y_end"] * factor)
 
-
-# Randomly changes brightness of the image
-def variateBrightness(img):
-    incr = random.randint(-30, 30)
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    value = hsv[:,:,2]
-    if incr >= 0:
-        incr_border = 255 - incr
-        value[value >= incr_border] = 255
-        value[value < incr_border] += incr
-    else:
-        incr_border = -incr
-        value[value > incr_border] -= incr_border
-        value[value <= incr_border] = 0
-    img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    return img
-
-backgroundImages = getImagesBackground(BACKGROUND_DIR)
-numBackgroundImages = len(backgroundImages)
-if numBackgroundImages == 0:
-    print("Error: no background images were found. Exiting...")
-    exit(1)
-
-imageBox = backgroundImages[0]
-boxHeight, boxWidth, boxChannels = imageBox.shape
-
-dictObjectImages, objectNames = getObjectImages(OBJECTS_DIR)
-dictColors = generateDictColors(len(objectNames))
-stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
-dirnameOutputFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_IMAGES
-dirnameMarkupFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_MARKUP
-
-subprocess.call(["mkdir", "-p", dirnameOutputFull])
-subprocess.call(["mkdir", "-p", dirnameMarkupFull])
-
-if DO_WRITE_LOG_FILE:
-    logFilePath = DIRNAME_OUTPUT + "/" + stringTime + "/log.txt"
-    logFile = open(logFilePath, "w")
-
-descPictures = {}
-timeBeginning = time.time()
-for i in range(SAMPLE_SET_SIZE):
-    backgroundIndex = randint(0, numBackgroundImages - 1)
-    imageBoxCurrent = backgroundImages[backgroundIndex].copy()
-
-    imageMarkupCurrent = None
-    if DO_WRITE_MARKUP or DO_PUT_DENSELY:
-        imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8)
-
-    dictObjects = putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, imageMarkupCurrent)
-
-    if RESCALE_COEF != 1.0:
-        imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = RESCALE_COEF, fy = RESCALE_COEF)
-        if DO_WRITE_MARKUP:
-            imageMarkupCurrent = cv2.resize(imageMarkupCurrent, (0, 0), fx = RESCALE_COEF, fy = RESCALE_COEF)
-        scaleCoordinates(dictObjects, RESCALE_COEF)
-    if DO_VARIATE_BRIGHTNESS:
-        imageBoxCurrent = variateBrightness(imageBoxCurrent)
-    imageBoxCurrent = cv2.GaussianBlur(imageBoxCurrent, (3, 3), 0)
-
-    outImageName = str(i) + ".png"
-    outImagePath = dirnameOutputFull + "/" + outImageName
-    cv2.imwrite(outImagePath, imageBoxCurrent)
-    if DO_WRITE_MARKUP:
-        imageMarkupColor = grayToRgb(imageMarkupCurrent, dictColors)
-        outMarkupPath = dirnameMarkupFull + "/" + outImageName
-        if IS_MARKUP_COLORED:
-            cv2.imwrite(outMarkupPath, imageMarkupColor)
-        else:
-            cv2.imwrite(outMarkupPath, imageMarkupCurrent)
-
-    descPictures[outImageName] = dictObjects
+if __name__== "__main__":
+    global param_config
+    param_config=ParamConfig();
+    usage="Usage: %prog [options]"
+    parser=OptionParser(usage)
+    parser.add_option("-o",
+                      "--output_dir",
+                      dest="output_dir",
+                      default="output",
+                      help="Output dir for storing results ")
+    parser.add_option("-g",
+                      "--images_out_dir",
+                      dest="images_out_dir",
+                      default="images",
+                      help="Output dir for storing images ")
+    parser.add_option("-m",
+                      "--markup_out_dir",
+                      dest="markup_out_dir",
+                      default="markup",
+                      help="Output dir for storing markups ")
+    parser.add_option("-b",
+                      "--background_dir",
+                      dest="background_dir",
+                      default="./sources/background",
+                      help="Input dir with the images RGB background images ")
+    parser.add_option("-j",
+                      "--objects_dir",
+                      dest="objects_dir",
+                      default="./sources/objects",
+                      help="Input dir with the images RGBA object images ")
+    parser.add_option("-l",
+                      "--intersect_counter_limit",
+                      dest="intersect_counter_limit",
+                      default=100,
+                      help="unknow")
+    parser.add_option("-s",
+                      "--oversize_counter_limit",
+                      dest="oversize_counter_limit",
+                      default=100,
+                      help="unknow")
+    parser.add_option("-d",
+                      "--do_drop_objects",
+                      dest="do_drop_objects",
+                      default=True,
+                      help="unknow")
+    parser.add_option("-c",
+                      "--max_object_count",
+                      dest="max_object_count",
+                      default=5,
+                      help="unknow")
+    parser.add_option("-n",
+                      "--variate_brightness",
+                      dest="variate_brightness",
+                      default=True,
+                      help="unknow")
+    parser.add_option("-a",
+                      "--rescale_objects",
+                      dest = "rescale_objects",
+                      default = True,
+                      help = "Will objects be randomly rescaled withing certain range"
+                      " before being added to the background")
+    parser.add_option("-t",
+                      "--object_scale_variation",
+                      dest = "object_scale_variation",
+                      default = 0.3,
+                      help = "Specifies range for possible increase and decrease in the scale of object images." 
+                      "Is only applicable if <rescale_objects> is set to <True>")
+    parser.add_option("-w",
+                      "--write_markup",
+                      dest="write_markup",
+                      default=False,
+                      help="unknow")
+    parser.add_option("-u",
+                      "--markup_colored",
+                      dest="markup_colored",
+                      default=False,
+                      help="unknow")
+    parser.add_option("-x",
+                      "--put_densely",
+                      dest="put_densely",
+                      default=False,
+                      help="unknow")
+    parser.add_option("-v",
+                      "--write_log",
+                      dest="write_log",
+                      default=False,
+                      help="unknow")
+    parser.add_option("-r",
+                      "--rescale_coef",
+                      dest="rescale_coef",
+                      default=1,
+                      help="unknow")
+    parser.add_option("-p",
+                      "--sample_set_size",
+                      dest="sample_set_size",
+                      default=5,
+                      help="unknow")
+    parser.add_option("-z",
+                      "--get_object_labels",
+                      dest="get_object_labels",
+                      default=0,
+                      help="Generate a list of labels an grey scale level and RGB id")
+    options,args=parser.parse_args()
  
-    if DO_WRITE_LOG_FILE:
-        logFile.write(outImageName + "\r\n")
-        for objectName in dictObjects:
-            if dictObjects[objectName]["is_present"] == 1.0:
-                logFile.write("\t" + objectName + "\r\n")
-                logFile.write("\tleft: " + str(dictObjects[objectName]["x_beg"]) + "\r\n")
-                logFile.write("\ttop: " + str(dictObjects[objectName]["y_beg"]) + "\r\n")
-                logFile.write("\tright: " + str(dictObjects[objectName]["x_end"]) + "\r\n")
-                logFile.write("\tbottom: " + str(dictObjects[objectName]["y_end"]) + "\r\n\r\n")
+    BACKGROUND_DIR = options.background_dir
+    OBJECTS_DIR = options.objects_dir
+    DIRNAME_OUT_MARKUP = options.markup_out_dir
+    DIRNAME_OUT_IMAGES = options.images_out_dir
+    DIRNAME_OUTPUT=options.output_dir
+ 
+    param_config.INTERSECT_COUNTER_LIMIT = options.intersect_counter_limit
+    param_config.OVERSIZE_COUNTER_LIMIT= options.oversize_counter_limit
+    param_config.DO_DROP_OBJECTS = eval(options.do_drop_objects) if \
+            isinstance(options.do_drop_objects, basestring) else \
+            options.do_drop_objects
+    param_config.MAX_OBJECTS_COUNT = int(options.max_object_count)
+    param_config.DO_VARIATE_BRIGHTNESS = eval(options.variate_brightness) if \
+            isinstance(options.variate_brightness, basestring) else \
+            options.variate_brightness
+    param_config.DO_RESCALE_OBJECTS = bool(options.rescale_objects)
+    param_config.OBJECT_SCALE_VARIATION = float(options.object_scale_variation)
+    param_config.DO_WRITE_MARKUP = bool(options.write_markup)
+    param_config.IS_MARKUP_COLORED = eval(options.markup_colored) if \
+            isinstance(options.markup_colored, basestring) else \
+            options.markup_colored
+    param_config.DO_PUT_DENSELY = eval(options.put_densely) if \
+            isinstance(options.put_densely, basestring) else \
+            options.put_densely
+    param_config.DO_WRITE_LOG_FILE = eval(options.write_log) if \
+            isinstance(options.write_log, basestring) else \
+            options.write_log
+    param_config.RESCALE_COEF = options.rescale_coef
+    param_config.SAMPLE_SET_SIZE = int(options.sample_set_size)
 
-        logFile.write("\r\n")
-        logFile.write(" ")
+    if param_config.OBJECT_SCALE_VARIATION >= 1 or param_config.OBJECT_SCALE_VARIATION < 0:
+        print("Warning: value %f of <object_scale_variation> is out of the range [0; 1), "
+                "no scale variation will be performed." % param_config.OBJECT_SCALE_VARIATION)
+        param_config.DO_RESCALE_OBJECTS = False
+        param_config.OBJECT_SCALE_VARIATION = 0.0
 
-    timeCurrent = time.time()
-    timeElapsed = timeCurrent - timeBeginning
-    timePerImage = timeElapsed / (i + 2)
-    timeLeft = (SAMPLE_SET_SIZE - 1 - i) * timePerImage
-    timeLeftString = time.strftime('%H:%M:%S', time.gmtime(int(timeLeft)))
-    print("%dth image is processed, estimated time left is %s" % (i + 1, timeLeftString))
+    logFile = None
+    backgroundImages = getImagesBackground(BACKGROUND_DIR)
+    numBackgroundImages = len(backgroundImages)
+    if numBackgroundImages == 0:
+        print("Error: no background images were found. Exiting...")
+        exit(1)
+ 
+    imageBox = backgroundImages[0]
+    boxHeight, boxWidth, boxChannels = imageBox.shape
+ 
+    dictObjectImages, objectNames = getObjectImages(OBJECTS_DIR)
+    dictColors = generateDictColors(len(objectNames))
+ 
+    if options.get_object_labels:
+        writtenDict = generateDictGray(objectNames)
+        print writtenDict
+        print "-----------------"
+        print dictColors
+        exit(0)
 
-writeConfigFile(dirnameOutputFull, descPictures)
-if DO_WRITE_MARKUP:
-    writtenDict = {}
-    writtenDict["colors"] = {}
-    for key in dictColors:
-        currentObjectName = objectNames[key]
-        writtenDict["colors"][currentObjectName] = dictColors[key]
-    writeConfigFile(dirnameMarkupFull, writtenDict)
-
-if DO_WRITE_LOG_FILE:
-    logFile.close()
+    stringTime = strftime("%Y%m%d_%H%M%S", gmtime())
+    dirnameOutputFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_IMAGES
+    dirnameMarkupFull = DIRNAME_OUTPUT + "/" + stringTime + "/" + DIRNAME_OUT_MARKUP
+ 
+    subprocess.call(["mkdir", "-p", dirnameOutputFull])
+    subprocess.call(["mkdir", "-p", dirnameMarkupFull])
+ 
+    if param_config.DO_WRITE_LOG_FILE:
+        logFilePath = DIRNAME_OUTPUT + "/" + stringTime + "/log.txt"
+        logFile = open(logFilePath, "w")
+ 
+    descPictures = {}
+    timeBeginning = time.time()
+    for i in range(param_config.SAMPLE_SET_SIZE):
+        backgroundIndex = randint(0, numBackgroundImages - 1)
+        imageBoxCurrent = backgroundImages[backgroundIndex].copy()
+        
+        dictObjectImagesCopy = deepcopy(dictObjectImages)
+        imageMarkupCurrent = None
+        if param_config.DO_WRITE_MARKUP or param_config.DO_PUT_DENSELY:
+            imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8)
+ 
+        dictObjects = putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, param_config, imageMarkupCurrent)
+ 
+        if param_config.RESCALE_COEF != 1.0:
+            imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = param_config.RESCALE_COEF, fy = param_config.RESCALE_COEF)
+            if param_config.DO_WRITE_MARKUP:
+                imageMarkupCurrent = cv2.resize(imageMarkupCurrent, (0, 0), fx = param_config.RESCALE_COEF, fy = param_config.RESCALE_COEF)
+            scaleCoordinates(dictObjects, param_config.RESCALE_COEF)
+        if param_config.DO_VARIATE_BRIGHTNESS:
+            imageBoxCurrent = variateBrightness(imageBoxCurrent)
+        imageBoxCurrent = cv2.GaussianBlur(imageBoxCurrent, (3, 3), 0)
+    
+        outImageName = str(i) + ".png"
+        outImagePath = dirnameOutputFull + "/" + outImageName
+        cv2.imwrite(outImagePath, imageBoxCurrent)
+        if param_config.DO_WRITE_MARKUP:
+            imageMarkupColor = grayToRgb(imageMarkupCurrent, dictColors)
+            outMarkupPath = dirnameMarkupFull + "/" + outImageName
+            if param_config.IS_MARKUP_COLORED:
+                cv2.imwrite(outMarkupPath, imageMarkupColor)
+            else:
+                cv2.imwrite(outMarkupPath, imageMarkupCurrent)
+    
+        descPictures[outImageName] = dictObjects
+     
+        if param_config.DO_WRITE_LOG_FILE:
+            logFile.write(outImageName + "\r\n")
+            for objectName in dictObjects:
+                if dictObjects[objectName]["is_present"] == 1.0:
+                    logFile.write("\t" + objectName + "\r\n")
+                    logFile.write("\tleft: " + str(dictObjects[objectName]["x_beg"]) + "\r\n")
+                    logFile.write("\ttop: " + str(dictObjects[objectName]["y_beg"]) + "\r\n")
+                    logFile.write("\tright: " + str(dictObjects[objectName]["x_end"]) + "\r\n")
+                    logFile.write("\tbottom: " + str(dictObjects[objectName]["y_end"]) + "\r\n\r\n")
+    
+            logFile.write("\r\n")
+            logFile.write(" ")
+    
+        timeCurrent = time.time()
+        timeElapsed = timeCurrent - timeBeginning
+        timePerImage = timeElapsed / (i + 2)
+        timeLeft = (param_config.SAMPLE_SET_SIZE - 1 - i) * timePerImage
+        timeLeftString = time.strftime('%H:%M:%S', time.gmtime(int(timeLeft)))
+        print("%dth image is processed, estimated time left is %s" % (i + 1, timeLeftString))
+    
+    writeConfigFile(dirnameOutputFull, descPictures)
+    if param_config.DO_WRITE_MARKUP:
+        if param_config.IS_MARKUP_COLORED:
+            writtenDict = {}
+            writtenDict["colors"] = {}
+            for key in dictColors:
+                if key >= len(objectNames):
+                    continue
+                currentObjectName = objectNames[key]
+                writtenDict["colors"][currentObjectName] = dictColors[key]
+            writeConfigFile(dirnameMarkupFull, writtenDict)
+        else:
+            writtenDict = generateDictGray(objectNames)
+            writeSimpleConfig(dirnameMarkupFull, writtenDict)
+ 
+    if param_config.DO_WRITE_LOG_FILE:
+        logFile.close()

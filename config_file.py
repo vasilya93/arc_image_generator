@@ -1,8 +1,21 @@
 #!/usr/bin/python
 import ConfigParser
 import io
+import os
 
 DEFAULT_CONFIG_FILENAME = "config.ini"
+
+def writeSimpleConfig(configDir, dictionary, configFilename = None):
+    if configFilename == None:
+        configFilename = DEFAULT_CONFIG_FILENAME
+    configPath = configDir + "/" + configFilename
+    configFile = open(configPath, 'w')
+
+    for key in dictionary:
+        writtenLine = "%s: %s" % (str(key), str(dictionary[key]))
+        configFile.write(writtenLine + os.linesep)
+
+    configFile.close()
 
 def writeConfigFile(configDir, dictionary, configFilename = None):
     if configFilename == None:

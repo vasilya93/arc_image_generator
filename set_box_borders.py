@@ -95,6 +95,7 @@ imageData = {}
 imageNames = getImageNames(BACKGROUND_DIR)
 cv2.namedWindow(WINDOW_NAME)
 cv2.setMouseCallback(WINDOW_NAME, mouseHandler)
+print imageNames
 for imageName in imageNames:
     resetBorders()
     imagePath = BACKGROUND_DIR + "/" + imageName
