@@ -43,6 +43,7 @@ class ParamConfig:
     RESCALE_COEF = 1
     SAMPLE_SET_SIZE = 5
     DO_WRITE_LOG_FILE = False
+    DO_SAVE_WHOLE_IMAGE = False
 
 global param_config
 
@@ -68,6 +69,7 @@ def getImagesBackground(backgroundDir):
     imageNames = getImageNames(backgroundDir)
     dictBoxBorders = readConfigFile(backgroundDir)
     backgroundImages = []
+    backgroundFullImages = []
     for filename in imageNames:
         imagePath = backgroundDir + "/" + filename
         imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
@@ -77,6 +79,7 @@ def getImagesBackground(backgroundDir):
         boxRight = np.int(dictBoxBorders[filename]["right"])
         imageBox = imageFull[boxTop:boxBottom, boxLeft:boxRight, :]
         backgroundImages.append(imageBox)
+        backgroundFullImages.append(imageFull)
     if len(backgroundImages) != 0:
         backgroundImages.sort(key = lambda x: x.shape[0])
         minHeight = backgroundImages[0].shape[0]
@@ -87,6 +90,36 @@ def getImagesBackground(backgroundDir):
             x_beg = (width - minWidth) / 2; x_end = x_beg + minWidth
             y_beg = (height - minHeight) / 2; y_end = y_beg + minHeight
             backgroundImages[index] = image[y_beg:y_end, x_beg:x_end, :]
+    return backgroundImages, backgroundFullImages
+
+def getDictImagesBackground(backgroundDir):
+    imageNames = getImageNames(backgroundDir)
+    dictBoxBorders = readConfigFile(backgroundDir)
+    backgroundImages = []
+    for filename in imageNames:
+        imagePath = backgroundDir + "/" + filename
+        imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
+        boxTop = np.int(dictBoxBorders[filename]["top"])
+        boxBottom = np.int(dictBoxBorders[filename]["bottom"])
+        boxLeft = np.int(dictBoxBorders[filename]["left"])
+        boxRight = np.int(dictBoxBorders[filename]["right"])
+        backgroundImages.append({"image": imageFull, \
+                "top": boxTop, \
+                "left": boxLeft, \
+                "width": boxRight - boxLeft, \
+                "height": boxBottom - boxTop})
+    if len(backgroundImages) > 0:
+        backgroundImages.sort(key = lambda x: x["height"])
+        minHeight = backgroundImages[0]["height"]
+        backgroundImages.sort(key = lambda x: x["width"])
+        minWidth = backgroundImages[0]["width"]
+        for image_desc in backgroundImages:
+            height = image_desc["height"]
+            width = image_desc["width"]
+            image_desc["left"] += (width - minWidth) / 2
+            image_desc["width"] = minWidth
+            image_desc["top"] += (height - minHeight) / 2
+            image_desc["height"] = minHeight
     return backgroundImages
 
 # If final images are downscaled (becuase NN does not need full-scale image to
@@ -103,6 +136,12 @@ def scaleCoordinates(dictObjects, factor):
         dictObjects[key]["y_beg"] = round(dictObjects[key]["y_beg"] * factor)
         dictObjects[key]["x_end"] = round(dictObjects[key]["x_end"] * factor)
         dictObjects[key]["y_end"] = round(dictObjects[key]["y_end"] * factor)
+
+def scaleBoxDimensions(boxDescription, factor):
+    boxDescription["left"] = int(round(boxDescription["left"] * factor))
+    boxDescription["top"] = int(round(boxDescription["top"] * factor))
+    boxDescription["width"] = int(round(boxDescription["width"] * factor))
+    boxDescription["height"] =  int(round(boxDescription["height"] * factor))
 
 if __name__== "__main__":
     global param_config
@@ -206,6 +245,11 @@ if __name__== "__main__":
                       dest="get_object_labels",
                       default=0,
                       help="Generate a list of labels an grey scale level and RGB id")
+    parser.add_option("-i",
+                      "--save_whole_image",
+                      dest="save_whole_image",
+                      default=False,
+                      help="Do save whole generated image instead of only area marked as box")
     options,args=parser.parse_args()
  
     BACKGROUND_DIR = options.background_dir
@@ -235,8 +279,9 @@ if __name__== "__main__":
     param_config.DO_WRITE_LOG_FILE = eval(options.write_log) if \
             isinstance(options.write_log, basestring) else \
             options.write_log
-    param_config.RESCALE_COEF = options.rescale_coef
+    param_config.RESCALE_COEF = float(options.rescale_coef)
     param_config.SAMPLE_SET_SIZE = int(options.sample_set_size)
+    param_config.DO_SAVE_WHOLE_IMAGE = bool(options.save_whole_image)
 
     if param_config.OBJECT_SCALE_VARIATION >= 1 or param_config.OBJECT_SCALE_VARIATION < 0:
         print("Warning: value %f of <object_scale_variation> is out of the range [0; 1), "
@@ -245,14 +290,14 @@ if __name__== "__main__":
         param_config.OBJECT_SCALE_VARIATION = 0.0
 
     logFile = None
-    backgroundImages = getImagesBackground(BACKGROUND_DIR)
+    backgroundImages = getDictImagesBackground(BACKGROUND_DIR)
     numBackgroundImages = len(backgroundImages)
     if numBackgroundImages == 0:
         print("Error: no background images were found. Exiting...")
         exit(1)
  
     imageBox = backgroundImages[0]
-    boxHeight, boxWidth, boxChannels = imageBox.shape
+    bgHeight, bgWidth, _ = imageBox["image"].shape
  
     dictObjectImages, objectNames = getObjectImages(OBJECTS_DIR)
     dictColors = generateDictColors(len(objectNames))
@@ -279,37 +324,69 @@ if __name__== "__main__":
     timeBeginning = time.time()
     for i in range(param_config.SAMPLE_SET_SIZE):
         backgroundIndex = randint(0, numBackgroundImages - 1)
-        imageBoxCurrent = backgroundImages[backgroundIndex].copy()
-        
+        imageDictCurrent = deepcopy(backgroundImages[backgroundIndex])
+        topCurrent = imageDictCurrent["top"]
+        leftCurrent = imageDictCurrent["left"]
+        heightCurrent = imageDictCurrent["height"]
+        widthCurrent = imageDictCurrent["width"]
+        backgroundFullCurrent = imageDictCurrent["image"]
+        imageBoxCurrent = backgroundFullCurrent[topCurrent:topCurrent + heightCurrent, \
+                leftCurrent:leftCurrent + widthCurrent, :]
+        # there is a problem with this copy, as it is not attached to 
+        #backgroundFullCurrent = backgroundFullImages[backgroundIndex]
+ 
         dictObjectImagesCopy = deepcopy(dictObjectImages)
         imageMarkupCurrent = None
         if param_config.DO_WRITE_MARKUP or param_config.DO_PUT_DENSELY:
-            imageMarkupCurrent = np.zeros((boxHeight, boxWidth), np.uint8)
- 
+            imageMarkupFullCurrent = np.zeros((bgHeight, bgWidth), np.uint8)
+            imageMarkupCurrent = imageMarkupFullCurrent[topCurrent:topCurrent + heightCurrent, \
+                leftCurrent:leftCurrent + widthCurrent]
+
         dictObjects = putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, param_config, imageMarkupCurrent)
- 
+
         if param_config.RESCALE_COEF != 1.0:
-            imageBoxCurrent = cv2.resize(imageBoxCurrent, (0, 0), fx = param_config.RESCALE_COEF, fy = param_config.RESCALE_COEF)
+            backgroundFullCurrent = cv2.resize(backgroundFullCurrent, (0, 0), fx = param_config.RESCALE_COEF, fy = param_config.RESCALE_COEF)
             if param_config.DO_WRITE_MARKUP:
-                imageMarkupCurrent = cv2.resize(imageMarkupCurrent, (0, 0), fx = param_config.RESCALE_COEF, fy = param_config.RESCALE_COEF)
+                imageMarkupFullCurrent = cv2.resize(imageMarkupFullCurrent, (0, 0), fx = param_config.RESCALE_COEF, fy = param_config.RESCALE_COEF)
             scaleCoordinates(dictObjects, param_config.RESCALE_COEF)
+            scaleBoxDimensions(imageDictCurrent, param_config.RESCALE_COEF)
         if param_config.DO_VARIATE_BRIGHTNESS:
-            imageBoxCurrent = variateBrightness(imageBoxCurrent)
-        imageBoxCurrent = cv2.GaussianBlur(imageBoxCurrent, (3, 3), 0)
-    
+            backgroundFullCurrent = variateBrightness(backgroundFullCurrent)
+        backgroundFullCurrent = cv2.GaussianBlur(backgroundFullCurrent, (3, 3), 0)
+
+        topCurrent = imageDictCurrent["top"]
+        leftCurrent = imageDictCurrent["left"]
+        heightCurrent = imageDictCurrent["height"]
+        widthCurrent = imageDictCurrent["width"]
+        imageBoxCurrent = backgroundFullCurrent[topCurrent:topCurrent + heightCurrent, \
+                leftCurrent:leftCurrent + widthCurrent, :]
+        if param_config.DO_WRITE_MARKUP:
+            imageMarkupCurrent = imageMarkupFullCurrent[topCurrent:topCurrent + heightCurrent, \
+                leftCurrent:leftCurrent + widthCurrent]
+ 
         outImageName = str(i) + ".png"
         outImagePath = dirnameOutputFull + "/" + outImageName
-        cv2.imwrite(outImagePath, imageBoxCurrent)
-        if param_config.DO_WRITE_MARKUP:
-            imageMarkupColor = grayToRgb(imageMarkupCurrent, dictColors)
-            outMarkupPath = dirnameMarkupFull + "/" + outImageName
-            if param_config.IS_MARKUP_COLORED:
-                cv2.imwrite(outMarkupPath, imageMarkupColor)
-            else:
-                cv2.imwrite(outMarkupPath, imageMarkupCurrent)
-    
+        outMarkupPath = dirnameMarkupFull + "/" + outImageName
+
+        if param_config.DO_SAVE_WHOLE_IMAGE:
+            cv2.imwrite(outImagePath, backgroundFullCurrent)
+            if param_config.DO_WRITE_MARKUP:
+                imageMarkupColor = grayToRgb(imageMarkupFullCurrent, dictColors) 
+                if param_config.IS_MARKUP_COLORED:
+                    cv2.imwrite(outMarkupPath, imageMarkupColor)
+                else:
+                    cv2.imwrite(outMarkupPath, imageMarkupFullCurrent)
+        else:
+            cv2.imwrite(outImagePath, imageBoxCurrent)
+            if param_config.DO_WRITE_MARKUP:
+                imageMarkupColor = grayToRgb(imageMarkupCurrent, dictColors) 
+                if param_config.IS_MARKUP_COLORED:
+                    cv2.imwrite(outMarkupPath, imageMarkupColor)
+                else:
+                    cv2.imwrite(outMarkupPath, imageMarkupCurrent)
+ 
         descPictures[outImageName] = dictObjects
-     
+ 
         if param_config.DO_WRITE_LOG_FILE:
             logFile.write(outImageName + "\r\n")
             for objectName in dictObjects:
@@ -319,17 +396,17 @@ if __name__== "__main__":
                     logFile.write("\ttop: " + str(dictObjects[objectName]["y_beg"]) + "\r\n")
                     logFile.write("\tright: " + str(dictObjects[objectName]["x_end"]) + "\r\n")
                     logFile.write("\tbottom: " + str(dictObjects[objectName]["y_end"]) + "\r\n\r\n")
-    
+ 
             logFile.write("\r\n")
             logFile.write(" ")
-    
+ 
         timeCurrent = time.time()
         timeElapsed = timeCurrent - timeBeginning
         timePerImage = timeElapsed / (i + 2)
         timeLeft = (param_config.SAMPLE_SET_SIZE - 1 - i) * timePerImage
         timeLeftString = time.strftime('%H:%M:%S', time.gmtime(int(timeLeft)))
         print("%dth image is processed, estimated time left is %s" % (i + 1, timeLeftString))
-    
+ 
     writeConfigFile(dirnameOutputFull, descPictures)
     if param_config.DO_WRITE_MARKUP:
         if param_config.IS_MARKUP_COLORED:
