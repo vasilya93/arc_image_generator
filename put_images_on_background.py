@@ -41,10 +41,17 @@ def putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, paramC
         objectImage = dictObjectImages[objectName][currentObjectImageIndex]
 
         if paramConfig.DO_RESCALE_OBJECTS:
-            objectRescaleCoef = random.uniform(1 - paramConfig.OBJECT_SCALE_VARIATION, \
+            rescaleX = random.uniform(1 - paramConfig.OBJECT_SCALE_VARIATION, \
                     1 + paramConfig.OBJECT_SCALE_VARIATION)
-            objectImage = cv2.resize(objectImage, None, fx = objectRescaleCoef, \
-                    fy = objectRescaleCoef)
+            if paramConfig.RESCALE_KEEP_RATE:
+                rescaleY = rescaleX
+            else:
+                rescaleY = random.uniform(1 - paramConfig.OBJECT_SCALE_VARIATION, \
+                        1 + paramConfig.OBJECT_SCALE_VARIATION)
+
+            objectImage = cv2.resize(objectImage, None, fx = rescaleX, \
+                    fy = rescaleY)
+
         cornersRot = []
         if objDesc.isPresent:
             objDesc.height, objDesc.width, channelsOrig = objectImage.shape
@@ -55,24 +62,25 @@ def putImagesOnBackground(imageBoxCurrent, dictObjectImages, objectNames, paramC
                   height, \
                   width, \
                   paramConfig.DO_PUT_DENSELY, \
-                  paramConfig.OVERSIZE_COUNTER_LIMIT)
+                  paramConfig.OVERSIZE_COUNTER_LIMIT, \
+                  paramConfig.DO_ROTATE_OBJECTS)
 
-            # Selecting position for rotated object, and checking that there is
-            # no intersection with the other objects
-            if objDesc.isPresent:
-                objMarkup = cv2.cvtColor(imageRotated, cv2.COLOR_BGR2GRAY)
-                objMarkup[objMarkup > 0] = i + 1
-                selectObjectPosition(objMarkup, objDesc, height, width, objHeight, objWidth, \
-                        listRectangles, imageMarkup, paramConfig.DO_PUT_DENSELY, paramConfig.INTERSECT_COUNTER_LIMIT)
- 
-            # Once the object is rotated and its position is selected, we put it
-            # onto the image
-            if objDesc.isPresent:
-                objDesc.x = (objDesc.xBeg + objDesc.xEnd) / 2.0
-                objDesc.y = (objDesc.yBeg + objDesc.yEnd) / 2.0
+        # Selecting position for rotated object, and checking that there is
+        # no intersection with the other objects
+        if objDesc.isPresent:
+            objMarkup = cv2.cvtColor(imageRotated, cv2.COLOR_BGR2GRAY)
+            objMarkup[objMarkup > 0] = i + 1
+            selectObjectPosition(objMarkup, objDesc, height, width, objHeight, objWidth, \
+                    listRectangles, imageMarkup, paramConfig.DO_PUT_DENSELY, paramConfig.INTERSECT_COUNTER_LIMIT)
 
-                putObjectOnBackground(imageBoxCurrent, imageRotated, \
-                    [objDesc.xBeg, objDesc.yBeg, objDesc.xEnd, objDesc.yEnd], i + 1, imageMarkup)
+        # Once the object is rotated and its position is selected, we put it
+        # onto the image
+        if objDesc.isPresent:
+            objDesc.x = (objDesc.xBeg + objDesc.xEnd) / 2.0
+            objDesc.y = (objDesc.yBeg + objDesc.yEnd) / 2.0
+
+            putObjectOnBackground(imageBoxCurrent, imageRotated, \
+                [objDesc.xBeg, objDesc.yBeg, objDesc.xEnd, objDesc.yEnd], i + 1, imageMarkup)
 
         dictObjects[objectName] = objDesc.getDictionary(cornersRot)
  
@@ -89,11 +97,13 @@ def decideTakenImages(numImages, maxObjectsCount):
         isImageTaken[indexTrue] = True
     return isImageTaken
 
-def rotateObjectImage(objDesc, objectImage, height, width, doPutDensely, oversizeCounterLimit):
+def rotateObjectImage(objDesc, objectImage, height, width, doPutDensely, oversizeCounterLimit, doRotateObject):
     oversizeCounter = 0
     imageRotated = None
     while True:
-        if doPutDensely:
+        if not doRotateObject:
+            objDesc.angle = 0
+        elif doPutDensely:
             objDesc.angle = randint(0, 79)
             if objDesc.angle > 70:
                 objDesc.angle += 280

@@ -44,6 +44,8 @@ class ParamConfig:
     SAMPLE_SET_SIZE = 5
     DO_WRITE_LOG_FILE = False
     DO_SAVE_WHOLE_IMAGE = False
+    DO_ROTATE_OBJECTS = True
+    RESCALE_KEEP_RATE = True
 
 global param_config
 
@@ -204,6 +206,11 @@ if __name__== "__main__":
                       default = True,
                       help = "Will objects be randomly rescaled withing certain range"
                       " before being added to the background")
+    parser.add_option("-k",
+                      "--rescale_keep_rate",
+                      dest = "rescale_keep_rate",
+                      default = True,
+                      help = "Will rescaling keep rate between dimensions of the object")
     parser.add_option("-t",
                       "--object_scale_variation",
                       dest = "object_scale_variation",
@@ -250,6 +257,11 @@ if __name__== "__main__":
                       dest="save_whole_image",
                       default=False,
                       help="Do save whole generated image instead of only area marked as box")
+    parser.add_option("-e",
+                      "--rotate_objects",
+                      dest="rotate_objects",
+                      default=True,
+                      help="Rotate images of objects when they are placed on the background")
     options,args=parser.parse_args()
  
     BACKGROUND_DIR = options.background_dir
@@ -267,7 +279,12 @@ if __name__== "__main__":
     param_config.DO_VARIATE_BRIGHTNESS = eval(options.variate_brightness) if \
             isinstance(options.variate_brightness, basestring) else \
             options.variate_brightness
-    param_config.DO_RESCALE_OBJECTS = bool(options.rescale_objects)
+    param_config.DO_RESCALE_OBJECTS = eval(options.rescale_objects) if \
+            isinstance(options.rescale_objects, basestring) else \
+            options.rescale_objects
+    param_config.RESCALE_KEEP_RATE = eval(options.rescale_keep_rate) if \
+            isinstance(options.rescale_keep_rate, basestring) else \
+            options.rescale_keep_rate
     param_config.OBJECT_SCALE_VARIATION = float(options.object_scale_variation)
     param_config.DO_WRITE_MARKUP = bool(options.write_markup)
     param_config.IS_MARKUP_COLORED = eval(options.markup_colored) if \
@@ -281,7 +298,12 @@ if __name__== "__main__":
             options.write_log
     param_config.RESCALE_COEF = float(options.rescale_coef)
     param_config.SAMPLE_SET_SIZE = int(options.sample_set_size)
-    param_config.DO_SAVE_WHOLE_IMAGE = bool(options.save_whole_image)
+    param_config.DO_SAVE_WHOLE_IMAGE = eval(options.save_whole_image) if \
+            isinstance(options.save_whole_image, basestring) else \
+            options.save_whole_image
+    param_config.DO_ROTATE_OBJECTS = eval(options.rotate_objects) if \
+            isinstance(options.rotate_objects, basestring) else \
+            options.rotate_objects
 
     if param_config.OBJECT_SCALE_VARIATION >= 1 or param_config.OBJECT_SCALE_VARIATION < 0:
         print("Warning: value %f of <object_scale_variation> is out of the range [0; 1), "
