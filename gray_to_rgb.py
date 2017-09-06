@@ -6,7 +6,7 @@ from random import randrange
 from object_labels_definition import OBJECT_LABELS_TO_ID
 from object_labels_definition import ID_TO_RGB_COLOR
 
-def generateDictColors(size,default_ids=True):
+def generateDictColors(size,default_ids=False):
     dictColors = {}
     if default_ids:
         dictColors=ID_TO_RGB_COLOR

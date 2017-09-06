@@ -102,7 +102,9 @@ def rotateObjectImage(objDesc, objectImage, height, width, doPutDensely, oversiz
     imageRotated = None
     while True:
         if not doRotateObject:
-            objDesc.angle = 0
+            objDesc.angle = randint(0, 20)
+            if objDesc.angle > 10:
+                objDesc.angle += 340
         elif doPutDensely:
             objDesc.angle = randint(0, 79)
             if objDesc.angle > 70:

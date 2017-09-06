@@ -12,7 +12,7 @@ import Image
 
 colors = {
   'amazon-40': [
-    (0,0,0), # 0=background
+    (198,21,243), # 0=background
     (128,0,0),
     (0,128,0),
     (128,128,0),
