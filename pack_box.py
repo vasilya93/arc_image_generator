@@ -45,6 +45,7 @@ class ParamConfig:
     DO_WRITE_LOG_FILE = False
     DO_SAVE_WHOLE_IMAGE = False
     DO_ROTATE_OBJECTS = True
+    DO_PICK_BACKGROUND = False
     RESCALE_KEEP_RATE = True
 
 global param_config
@@ -63,36 +64,6 @@ def getObjectImages(parentDirectory):
             imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
             dictObjectImages[dirname].append(imageFull)
     return (dictObjectImages, objectNames)
-
-# Returns specified image from the specified directory, which is supposed to be
-# used as background to put objects on. If needed, the background is cropped
-# to indicated region (containing only the box with the objects).
-def getImagesBackground(backgroundDir):
-    imageNames = getImageNames(backgroundDir)
-    dictBoxBorders = readConfigFile(backgroundDir)
-    backgroundImages = []
-    backgroundFullImages = []
-    for filename in imageNames:
-        imagePath = backgroundDir + "/" + filename
-        imageFull = cv2.imread(imagePath, cv2.IMREAD_UNCHANGED)
-        boxTop = np.int(dictBoxBorders[filename]["top"])
-        boxBottom = np.int(dictBoxBorders[filename]["bottom"])
-        boxLeft = np.int(dictBoxBorders[filename]["left"])
-        boxRight = np.int(dictBoxBorders[filename]["right"])
-        imageBox = imageFull[boxTop:boxBottom, boxLeft:boxRight, :]
-        backgroundImages.append(imageBox)
-        backgroundFullImages.append(imageFull)
-    if len(backgroundImages) != 0:
-        backgroundImages.sort(key = lambda x: x.shape[0])
-        minHeight = backgroundImages[0].shape[0]
-        backgroundImages.sort(key = lambda x: x.shape[1])
-        minWidth = backgroundImages[0].shape[1]
-        for index, image in enumerate(backgroundImages):
-            height, width, channels = image.shape
-            x_beg = (width - minWidth) / 2; x_end = x_beg + minWidth
-            y_beg = (height - minHeight) / 2; y_end = y_beg + minHeight
-            backgroundImages[index] = image[y_beg:y_end, x_beg:x_end, :]
-    return backgroundImages, backgroundFullImages
 
 def getDictImagesBackground(backgroundDir):
     imageNames = getImageNames(backgroundDir)
@@ -262,6 +233,11 @@ if __name__== "__main__":
                       dest="rotate_objects",
                       default=True,
                       help="Rotate images of objects when they are placed on the background")
+    parser.add_option("-q",
+                      "--pick_background",
+                      dest="pick_background",
+                      default=False,
+                      help="Select background for generated image by randomly picking areas from sample background images")
     options,args=parser.parse_args()
  
     BACKGROUND_DIR = options.background_dir
@@ -304,6 +280,9 @@ if __name__== "__main__":
     param_config.DO_ROTATE_OBJECTS = eval(options.rotate_objects) if \
             isinstance(options.rotate_objects, basestring) else \
             options.rotate_objects
+    param_config.DO_PICK_BACKGROUND = eval(options.pick_background) if \
+            isinstance(options.pick_background, basestring) else \
+            options.pick_background
 
     if param_config.OBJECT_SCALE_VARIATION >= 1 or param_config.OBJECT_SCALE_VARIATION < 0:
         print("Warning: value %f of <object_scale_variation> is out of the range [0; 1), "
@@ -347,10 +326,16 @@ if __name__== "__main__":
     for i in range(param_config.SAMPLE_SET_SIZE):
         backgroundIndex = randint(0, numBackgroundImages - 1)
         imageDictCurrent = deepcopy(backgroundImages[backgroundIndex])
-        topCurrent = imageDictCurrent["top"]
-        leftCurrent = imageDictCurrent["left"]
         heightCurrent = imageDictCurrent["height"]
         widthCurrent = imageDictCurrent["width"]
+        if not param_config.DO_PICK_BACKGROUND:
+            print "background is not picked"
+            topCurrent = imageDictCurrent["top"]
+            leftCurrent = imageDictCurrent["left"]
+        else:
+            topCurrent = random.randint(0, bgHeight - heightCurrent)
+            leftCurrent = random.randint(0, bgWidth - widthCurrent)
+            print "background is picked, top is %d, left is %d" % (topCurrent, leftCurrent)
         backgroundFullCurrent = imageDictCurrent["image"]
         imageBoxCurrent = backgroundFullCurrent[topCurrent:topCurrent + heightCurrent, \
                 leftCurrent:leftCurrent + widthCurrent, :]
@@ -376,12 +361,12 @@ if __name__== "__main__":
             backgroundFullCurrent = variateBrightness(backgroundFullCurrent)
         backgroundFullCurrent = cv2.GaussianBlur(backgroundFullCurrent, (3, 3), 0)
 
-        topCurrent = imageDictCurrent["top"]
-        leftCurrent = imageDictCurrent["left"]
-        heightCurrent = imageDictCurrent["height"]
-        widthCurrent = imageDictCurrent["width"]
-        imageBoxCurrent = backgroundFullCurrent[topCurrent:topCurrent + heightCurrent, \
-                leftCurrent:leftCurrent + widthCurrent, :]
+        #topCurrent = imageDictCurrent["top"]
+        #leftCurrent = imageDictCurrent["left"]
+        #heightCurrent = imageDictCurrent["height"]
+        #widthCurrent = imageDictCurrent["width"]
+        #imageBoxCurrent = backgroundFullCurrent[topCurrent:topCurrent + heightCurrent, \
+        #        leftCurrent:leftCurrent + widthCurrent, :]
         if param_config.DO_WRITE_MARKUP:
             imageMarkupCurrent = imageMarkupFullCurrent[topCurrent:topCurrent + heightCurrent, \
                 leftCurrent:leftCurrent + widthCurrent]
